@@ -21,6 +21,7 @@ import {
   type SaveBrokerPayload,
   type SupportedBroker,
   activateBroker,
+  autoLogin,
   deleteBroker,
   getBrokerInstructions,
   listSavedBrokers,
@@ -377,6 +378,22 @@ export default function BrokerManager() {
     }
   }
 
+  async function handleAutoLogin(broker: string) {
+    setBusyBroker(broker)
+    try {
+      const r = await autoLogin(broker)
+      showToast.success(
+        `${brokerLabel(broker)} auto-login OK${r.expires_at ? ` — token valid until ${r.expires_at}` : ''}`
+      )
+      refresh()
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      showToast.error(`Auto-login failed: ${msg}`)
+    } finally {
+      setBusyBroker(null)
+    }
+  }
+
   async function handleDelete(broker: string) {
     setBusyBroker(broker)
     try {
@@ -482,6 +499,26 @@ export default function BrokerManager() {
                         <CheckCircle2 className="h-3 w-3 mr-1" />
                       )}
                       Make Active
+                    </Button>
+                  )}
+                  {/* Auto-login button — only shown for brokers that have a
+                      TOTP seed saved AND have an adapter implemented. The
+                      backend returns 501 for non-implemented brokers, but
+                      we gate client-side too to avoid the wasted call. */}
+                  {b.has_totp_seed && ['upstox'].includes(b.broker) && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleAutoLogin(b.broker)}
+                      disabled={busyBroker === b.broker}
+                      title="Run automated login using your saved TOTP seed"
+                    >
+                      {busyBroker === b.broker ? (
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3 w-3 mr-1" />
+                      )}
+                      Auto-login
                     </Button>
                   )}
                   <Button

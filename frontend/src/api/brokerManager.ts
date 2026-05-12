@@ -94,3 +94,18 @@ export async function deleteBroker(broker: string): Promise<void> {
   const r = await webClient.delete(`/api/broker/credentials/${broker}`)
   if (r.data?.status !== 'success') throw new Error(r.data?.message || 'delete failed')
 }
+
+export interface AutoLoginResult {
+  broker: string
+  access_token_masked: string
+  user_id?: string
+  expires_at?: string
+}
+
+export async function autoLogin(broker: string): Promise<AutoLoginResult> {
+  const r = await webClient.post(`/api/broker/credentials/${broker}/auto-login`)
+  if (r.data?.status !== 'success') {
+    throw new Error(r.data?.message || 'auto-login failed')
+  }
+  return r.data as AutoLoginResult
+}
