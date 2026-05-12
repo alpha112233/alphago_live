@@ -549,6 +549,17 @@ def setup_environment(app):
             # Signal that DB tables are ready (unblocks cache restoration)
             app.db_ready.set()
 
+            # alphago_live fork: re-populate BROKER_API_KEY etc. from
+            # broker_creds_db (Fernet-encrypted). On a fresh container the
+            # mounted .env has only placeholders — the real credentials
+            # live encrypted in SQLite. Bootstrap here so brlogin.py +
+            # auth.py + the broker plugins find them via os.getenv().
+            try:
+                from utils.broker_env_bootstrap import bootstrap_active_broker
+                bootstrap_active_broker()
+            except Exception as _e:
+                logger.exception(f"broker env bootstrap failed (continuing): {_e}")
+
             # Initialize schedulers AFTER database initialization
             try:
                 init_python_strategy()

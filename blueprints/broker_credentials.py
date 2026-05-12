@@ -423,35 +423,24 @@ def _build_redirect_url(broker: str) -> str:
 def _sync_active_broker_to_env(creds: dict, broker: str) -> tuple[bool, str | None]:
     """Write the active broker's credentials to .env AND to os.environ.
 
-    Required because brlogin.py and auth.py still os.getenv()-read these
-    values. Returns (ok, err_message).
+    Source of truth is broker_creds_db (Fernet-encrypted at rest). This
+    function ONLY updates the in-process `os.environ` cache so the existing
+    auth.py / brlogin.py read paths (`os.getenv('BROKER_API_KEY')`) see the
+    just-activated broker without restart.
+
+    Does NOT write to /app/.env on disk — that would defeat the at-rest
+    encryption (the .env mount is plaintext) and the file is mounted as a
+    single file, not a directory, so atomic-rename fails with EACCES anyway.
+    Restart-persistence comes from app.py's bootstrap hook that re-populates
+    os.environ from broker_creds_db at startup.
+
+    NOTE: single-worker eventlet gunicorn is what OpenAlgo runs, so a single
+    os.environ update is visible to every request. If we ever switch to
+    multi-worker gunicorn we need to move to a shared in-memory store.
+
+    Returns (ok, err_message).
     """
-    content, err = read_env_file()
-    if err:
-        return False, err
-
     redirect_url = _build_redirect_url(broker)
-    content = update_env_value(content, "BROKER_API_KEY", creds.get("api_key", "") or "")
-    content = update_env_value(content, "BROKER_API_SECRET", creds.get("api_secret", "") or "")
-    content = update_env_value(content, "BROKER_API_KEY_MARKET", creds.get("api_key_market", "") or "")
-    content = update_env_value(content, "BROKER_API_SECRET_MARKET", creds.get("api_secret_market", "") or "")
-    if redirect_url:
-        content = update_env_value(content, "REDIRECT_URL", redirect_url)
-
-    try:
-        env_path = get_env_path()
-        # Atomic write to avoid a half-written .env if the process is killed mid-write.
-        tmp_path = env_path + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp_path, env_path)
-    except Exception as e:
-        logger.exception("Failed to write .env during broker activation")
-        return False, str(e)
-
-    # Reflect in the running process so handlers reading os.getenv() see the new values.
-    # NOTE: brlogin.py's module-level cache (line 24) is NOT updated by this —
-    # the follow-up brlogin refactor moves that read to function-level.
     os.environ["BROKER_API_KEY"] = creds.get("api_key", "") or ""
     os.environ["BROKER_API_SECRET"] = creds.get("api_secret", "") or ""
     os.environ["BROKER_API_KEY_MARKET"] = creds.get("api_key_market", "") or ""
