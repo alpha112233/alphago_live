@@ -56,3 +56,14 @@ def get_host_server() -> str:
         str: The host server URL string.
     """
     return os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
+
+
+# alphago_live fork additions — product branding overrides
+def get_brand_name() -> str:
+    """Product name shown in UI. Defaults to 'Alpha Live Trading'."""
+    return os.getenv("BRAND_NAME", "Alpha Live Trading")
+
+
+def get_brand_tagline() -> str:
+    """Tagline shown under the brand name. Defaults to 'Your own trading platform'."""
+    return os.getenv("BRAND_TAGLINE", "Your own trading platform")

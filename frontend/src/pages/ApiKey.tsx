@@ -313,7 +313,7 @@ export default function ApiKey() {
               API Playground
             </CardTitle>
             <CardDescription>
-              Test and explore OpenAlgo REST APIs directly in your browser. Send requests, view
+              Test and explore Alpha Live Trading REST APIs directly in your browser. Send requests, view
               responses, and experiment with all available endpoints without writing any code.
             </CardDescription>
           </CardHeader>
