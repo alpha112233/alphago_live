@@ -161,6 +161,9 @@ function App() {
 
               {/* Broker auth routes */}
               <Route path="/broker" element={<BrokerSelect />} />
+              {/* alphago_live fork: outside the Layout group so it works before
+                  broker OAuth (the very thing it lets the user set up). */}
+              <Route path="/manage-brokers" element={<BrokerManager />} />
               <Route path="/broker/:broker/totp" element={<BrokerTOTP />} />
               <Route path="/broker/samco/auth" element={<SamcoAuth />} />
               {/* Dynamic broker TOTP routes for all supported brokers */}
@@ -178,7 +181,6 @@ function App() {
                 <Route path="/search" element={<Search />} />
                 {/* API Key management */}
                 <Route path="/apikey" element={<ApiKey />} />
-                <Route path="/manage-brokers" element={<BrokerManager />} />  {/* alphago_live fork */}
                 {/* Phase 4: Charts & Webhook Configuration */}
                 <Route path="/platforms" element={<Platforms />} />
                 <Route path="/tradingview" element={<TradingView />} />

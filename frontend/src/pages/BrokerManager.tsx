@@ -10,8 +10,9 @@
  * Backed by /api/broker/credentials/* endpoints (see api/brokerManager.ts).
  */
 
-import { CheckCircle2, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 
 import {
   type BrokerField,
@@ -399,6 +400,13 @@ export default function BrokerManager() {
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-6xl">
+      <Link
+        to="/broker"
+        className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-4"
+      >
+        <ArrowLeft className="h-4 w-4 mr-1" />
+        Back to broker login
+      </Link>
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Manage Brokers</h1>
