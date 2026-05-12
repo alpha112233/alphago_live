@@ -188,10 +188,15 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
       if (k === 'api_key') continue
       if (k.startsWith('extra.')) {
         extra[k.slice(6)] = v
-      } else if (['api_secret', 'api_key_market', 'api_secret_market', 'client_code', 'totp_seed'].includes(k)) {
-        (payload as Record<string, unknown>)[k] = v
-      } else {
-        extra[k] = v
+        continue
+      }
+      switch (k) {
+        case 'api_secret': payload.api_secret = v; break
+        case 'api_key_market': payload.api_key_market = v; break
+        case 'api_secret_market': payload.api_secret_market = v; break
+        case 'client_code': payload.client_code = v; break
+        case 'totp_seed': payload.totp_seed = v; break
+        default: extra[k] = v
       }
     }
     if (Object.keys(extra).length > 0) payload.extra = extra
