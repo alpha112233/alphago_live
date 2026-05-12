@@ -161,6 +161,10 @@ def login(creds: dict) -> dict:
     totp_secret = creds["totp_secret"]
 
     request_id = "WPRO-" + "".join(random.choices(string.ascii_letters + string.digits, k=10))
+    # Upstox now blocks "outdated" app-version claims at /api/login (error
+    # code 1017072 — observed 2026-05-13). We bump the appVersion + the
+    # userAgent suffix to currently-accepted values. Revisit when Upstox
+    # bumps their minimum again (the symptom is the same error code).
     headers = {
         "accept": "*/*",
         "accept-language": "en-GB,en;q=0.9",
@@ -179,8 +183,8 @@ def login(creds: dict) -> dict:
         ),
         "x-device-details": (
             "platform=WEB|osName=Mac OS/10.15.7|osVersion=Chrome/140.0.0.0|"
-            "appVersion=4.0.0|modelName=Chrome|manufacturer=Apple|"
-            f"uuid={request_id}|userAgent=Upstox 3.0"
+            "appVersion=5.4.0|modelName=Chrome|manufacturer=Apple|"
+            f"uuid={request_id}|userAgent=Upstox 5.4.0"
         ),
         "x-request-id": request_id,
     }
@@ -246,6 +250,17 @@ def login(creds: dict) -> dict:
     validate_token = otp_data.get("data", {}).get("validateOTPToken")
     is_totp_enabled = otp_data.get("data", {}).get("isTotpEnabled")
     if not validate_token:
+        # Detect the "outdated app version" check Upstox started enforcing
+        # 2026-05-13 (error code 1017072). The fix is to bump the
+        # appVersion + userAgent claims in the headers block above.
+        err = otp_data.get("error") if isinstance(otp_data, dict) else None
+        if isinstance(err, dict) and err.get("code") == 1017072:
+            return _fail(
+                "Upstox is rejecting our request as an outdated app version. "
+                "This is a header-version bump on Upstox's side — we need to "
+                "update the appVersion strings in broker_login_adapters/upstox.py. "
+                f"Upstox response: {err.get('message')}"
+            )
         return _fail(f"step2 OTP generate: no validateOTPToken in response: {otp_data}")
     if is_totp_enabled is False:
         return _fail(
