@@ -381,3 +381,233 @@ def get_capabilities():
         )
 
     return jsonify({"status": "success", "data": capabilities})
+
+
+# =============================================================================
+# Multi-broker endpoints (alphago_live fork addition)
+#
+# Upstream OpenAlgo treats `.env` as the source of truth for the ONE broker
+# this instance can use. The endpoints below add a per-user `broker_creds`
+# table that stores credentials for many brokers and tracks which one is
+# "active". Activating a broker syncs its creds back to `.env` so the rest
+# of OpenAlgo (brlogin.py, auth.py — they still read os.getenv) keeps
+# working unchanged. The full decoupling of those modules from .env lands in
+# follow-up patches (auth.py and brlogin.py refactors).
+# =============================================================================
+
+
+def _current_user_id() -> int | None:
+    """Resolve the logged-in user to a database id. Returns None if not signed in.
+
+    OpenAlgo is single-admin-per-instance, but using user_id keeps the DB
+    schema clean and future-proof for multi-user (if anyone ever wants that).
+    """
+    from flask import session
+    from database.user_db import User, db_session
+
+    username = session.get("user")
+    if not username:
+        return None
+    user = db_session.query(User).filter_by(username=username).first()
+    return user.id if user else None
+
+
+def _build_redirect_url(broker: str) -> str:
+    """Build the broker OAuth callback URL using HOST_SERVER from .env."""
+    host = (get_env_value("HOST_SERVER") or "").rstrip("/")
+    if not host:
+        return ""
+    return f"{host}/{broker}/callback"
+
+
+def _sync_active_broker_to_env(creds: dict, broker: str) -> tuple[bool, str | None]:
+    """Write the active broker's credentials to .env AND to os.environ.
+
+    Required because brlogin.py and auth.py still os.getenv()-read these
+    values. Returns (ok, err_message).
+    """
+    content, err = read_env_file()
+    if err:
+        return False, err
+
+    redirect_url = _build_redirect_url(broker)
+    content = update_env_value(content, "BROKER_API_KEY", creds.get("api_key", "") or "")
+    content = update_env_value(content, "BROKER_API_SECRET", creds.get("api_secret", "") or "")
+    content = update_env_value(content, "BROKER_API_KEY_MARKET", creds.get("api_key_market", "") or "")
+    content = update_env_value(content, "BROKER_API_SECRET_MARKET", creds.get("api_secret_market", "") or "")
+    if redirect_url:
+        content = update_env_value(content, "REDIRECT_URL", redirect_url)
+
+    try:
+        env_path = get_env_path()
+        # Atomic write to avoid a half-written .env if the process is killed mid-write.
+        tmp_path = env_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, env_path)
+    except Exception as e:
+        logger.exception("Failed to write .env during broker activation")
+        return False, str(e)
+
+    # Reflect in the running process so handlers reading os.getenv() see the new values.
+    # NOTE: brlogin.py's module-level cache (line 24) is NOT updated by this —
+    # the follow-up brlogin refactor moves that read to function-level.
+    os.environ["BROKER_API_KEY"] = creds.get("api_key", "") or ""
+    os.environ["BROKER_API_SECRET"] = creds.get("api_secret", "") or ""
+    os.environ["BROKER_API_KEY_MARKET"] = creds.get("api_key_market", "") or ""
+    os.environ["BROKER_API_SECRET_MARKET"] = creds.get("api_secret_market", "") or ""
+    if redirect_url:
+        os.environ["REDIRECT_URL"] = redirect_url
+    return True, None
+
+
+@broker_credentials_bp.route("/credentials/list", methods=["GET"])
+@check_session_validity
+def list_credentials_endpoint():
+    """List all brokers saved by the current user. No secrets in the response."""
+    from database.broker_creds_db import list_user_brokers
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    return jsonify({"status": "success", "data": list_user_brokers(user_id)})
+
+
+@broker_credentials_bp.route("/credentials/save", methods=["POST"])
+@check_session_validity
+def save_credentials_endpoint():
+    """Save (or update) credentials for a broker. Optionally activate it.
+
+    Request JSON shape:
+        {
+          "broker": "zerodha",
+          "api_key": "...",
+          "api_secret": "...",
+          "api_key_market": "",            # optional
+          "api_secret_market": "",         # optional
+          "client_code": "",               # optional
+          "totp_seed": "",                 # optional (for auto-login)
+          "extra": { "mpin": "1234" },     # optional broker-specific
+          "notes": "",                     # optional user label
+          "activate": false                # if true, make this the active broker
+        }
+    """
+    from database.broker_creds_db import (
+        add_or_update_broker_creds,
+        activate_broker,
+        get_broker_creds,
+    )
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    data = request.get_json(silent=True) or {}
+    broker = (data.get("broker") or "").strip().lower()
+    if not broker:
+        return jsonify({"status": "error", "message": "'broker' is required"}), 400
+
+    api_key = (data.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({"status": "error", "message": "'api_key' is required"}), 400
+
+    try:
+        add_or_update_broker_creds(
+            user_id=user_id,
+            broker=broker,
+            api_key=api_key,
+            api_secret=(data.get("api_secret") or "").strip() or None,
+            api_key_market=(data.get("api_key_market") or "").strip() or None,
+            api_secret_market=(data.get("api_secret_market") or "").strip() or None,
+            client_code=(data.get("client_code") or "").strip() or None,
+            totp_seed=(data.get("totp_seed") or "").strip() or None,
+            extra=data.get("extra") if isinstance(data.get("extra"), dict) else None,
+            notes=(data.get("notes") or "").strip() or None,
+        )
+    except Exception as e:
+        logger.exception("Failed to save broker creds")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    if data.get("activate"):
+        activate_broker(user_id, broker)
+        creds = get_broker_creds(user_id, broker) or {}
+        ok, err = _sync_active_broker_to_env(creds, broker)
+        if not ok:
+            return jsonify({"status": "error", "message": f"saved but env sync failed: {err}"}), 500
+
+    return jsonify({"status": "success", "broker": broker, "activated": bool(data.get("activate"))})
+
+
+@broker_credentials_bp.route("/credentials/<broker>/activate", methods=["PUT"])
+@check_session_validity
+def activate_credentials_endpoint(broker: str):
+    """Make `broker` the active broker for this user. Syncs creds to .env."""
+    from database.broker_creds_db import activate_broker, get_broker_creds
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    broker = (broker or "").strip().lower()
+    if not activate_broker(user_id, broker):
+        return jsonify({"status": "error", "message": f"broker '{broker}' is not saved"}), 404
+
+    creds = get_broker_creds(user_id, broker) or {}
+    ok, err = _sync_active_broker_to_env(creds, broker)
+    if not ok:
+        return jsonify({"status": "error", "message": f"activated but env sync failed: {err}"}), 500
+
+    return jsonify({"status": "success", "broker": broker})
+
+
+@broker_credentials_bp.route("/credentials/<broker>", methods=["DELETE"])
+@check_session_validity
+def delete_credentials_endpoint(broker: str):
+    """Remove a saved broker. Does NOT clear .env if this was the active one —
+    the user must activate a different broker explicitly to switch over."""
+    from database.broker_creds_db import delete_broker_creds
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    broker = (broker or "").strip().lower()
+    if not delete_broker_creds(user_id, broker):
+        return jsonify({"status": "error", "message": f"broker '{broker}' not saved"}), 404
+
+    return jsonify({"status": "success", "broker": broker})
+
+
+@broker_credentials_bp.route("/credentials/<broker>/instructions", methods=["GET"])
+@check_session_validity
+def broker_instructions_endpoint(broker: str):
+    """Return rendered markdown instructions + form field metadata for `broker`."""
+    from blueprints.broker_metadata import get_fields, get_instructions
+
+    broker = (broker or "").strip().lower()
+    redirect_url = _build_redirect_url(broker)
+    return jsonify({
+        "status": "success",
+        "broker": broker,
+        "fields": get_fields(broker),
+        "instructions_md": get_instructions(broker, redirect_url),
+        "redirect_url": redirect_url,
+    })
+
+
+@broker_credentials_bp.route("/supported", methods=["GET"])
+@check_session_validity
+def supported_brokers_endpoint():
+    """List all brokers OpenAlgo supports + which ones have detailed instructions."""
+    from blueprints.broker_metadata import BROKER_FIELDS, BROKER_INSTRUCTIONS
+
+    valid = [b.strip().lower() for b in (get_env_value("VALID_BROKERS") or "").split(",") if b.strip()]
+    out = []
+    for b in valid:
+        out.append({
+            "broker": b,
+            "has_fields_meta": b in BROKER_FIELDS,
+            "has_instructions": b in BROKER_INSTRUCTIONS,
+        })
+    return jsonify({"status": "success", "data": out})
