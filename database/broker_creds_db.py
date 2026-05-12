@@ -19,7 +19,6 @@ from datetime import datetime
 from sqlalchemy import (
     Column,
     DateTime,
-    ForeignKey,
     Integer,
     String,
     Text,
@@ -47,7 +46,12 @@ class BrokerCreds(Base):
     __tablename__ = "broker_creds"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # NOTE: not a SQLAlchemy ForeignKey — cross-module declarative_base() can't
+    # see user_db's `users` table. The user/broker_creds relationship is
+    # enforced by application code (broker_credentials.py routes always look
+    # up the current user via session before reading/writing this table).
+    # SQLite also ignores FKs by default unless PRAGMA foreign_keys=ON.
+    user_id = Column(Integer, nullable=False, index=True)
     broker = Column(String(50), nullable=False)
 
     # All `*_enc` columns hold Fernet ciphertext (auth_db.encrypt_token).
