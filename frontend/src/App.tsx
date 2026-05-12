@@ -35,6 +35,7 @@ const Token = lazy(() => import('@/pages/Token'))
 const Search = lazy(() => import('@/pages/Search'))
 const ApiKey = lazy(() => import('@/pages/ApiKey'))
 const Profile = lazy(() => import('@/pages/Profile'))
+const BrokerManager = lazy(() => import('@/pages/BrokerManager'))  // alphago_live fork
 const MasterContract = lazy(() => import('@/pages/MasterContract'))
 const ActionCenter = lazy(() => import('@/pages/ActionCenter'))
 
@@ -177,6 +178,7 @@ function App() {
                 <Route path="/search" element={<Search />} />
                 {/* API Key management */}
                 <Route path="/apikey" element={<ApiKey />} />
+                <Route path="/manage-brokers" element={<BrokerManager />} />  {/* alphago_live fork */}
                 {/* Phase 4: Charts & Webhook Configuration */}
                 <Route path="/platforms" element={<Platforms />} />
                 <Route path="/tradingview" element={<TradingView />} />

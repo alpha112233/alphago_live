@@ -2,6 +2,7 @@ import {
   BarChart3,
   Bell,
   BookOpen,
+  Briefcase,
   ClipboardList,
   Code2,
   Database,
@@ -60,6 +61,7 @@ export const mobileSheetItems = navItems.filter((item) => !bottomNavPaths.includ
 // Profile dropdown menu items
 export const profileMenuItems: NavItem[] = [
   { href: '/profile', label: 'Profile', icon: User },
+  { href: '/manage-brokers', label: 'Brokers', icon: Briefcase },  // alphago_live fork
   { href: '/apikey', label: 'API Key', icon: Key },
   { href: '/master-contract', label: 'Master Contract', icon: FileStack },
   { href: '/telegram', label: 'Telegram Bot', icon: MessageSquare },
