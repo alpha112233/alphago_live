@@ -55,9 +55,12 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "type": "text", "required": True,
          "help": "Combine your Dhan Client ID and API Key with three colons. Example: 1100000123:::abcd1234"},
         _TEXT_SECRET,
+        {"name": "extra.pin", "label": "Trading PIN (4-digit web/app PIN)",
+         "type": "password", "required": False,
+         "help": "Required for daily auto-login. This is the 4-digit PIN you use to log in to web.dhan.co — NOT the API secret."},
         {"name": "totp_seed", "label": "TOTP Seed (base32)",
          "type": "password", "required": False,
-         "help": "Required to enable daily auto-login. From web.dhan.co → My Profile → 2FA Setup."},
+         "help": "Required for daily auto-login. From web.dhan.co → My Profile → 2FA Settings → save the seed during setup."},
     ],
     "dhan_sandbox": [
         {"name": "api_key", "label": "Sandbox: Client ID:::API Key", "type": "text", "required": True},

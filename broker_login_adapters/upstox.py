@@ -124,19 +124,45 @@ def precheck(creds: dict) -> dict:
     return _ok("")
 
 
+_VERSION_VARIANTS = [
+    # (appVersion, userAgent_suffix, include_x_device_details)
+    # Tried in order until one succeeds or all fail. Upstox sometimes
+    # rejects a particular (sourceIP × appVersion) combination with
+    # error 1017072; bumping the claimed version often clears it.
+    ("4.0.0", "Upstox 3.0", True),     # alpha_live's known-working values
+    ("8.0.0", "Upstox 8.0", True),     # bumped, in case Upstox raised the floor
+    ("", "", False),                    # last resort: drop x-device-details entirely
+]
+
+
 def login(creds: dict) -> dict:
     """Drive the Upstox daily 2FA flow + token exchange.
 
-    Required keys in `creds`:
-        api_key:       Upstox app's client_id (string)
-        api_secret:    Upstox app's client_secret
-        redirect_uri:  The redirect URL registered with Upstox (must match)
-        mobile_number: Customer's Upstox-registered mobile, with country code
-        pin:           Customer's 2FA trading PIN (plaintext)
-        totp_secret:   Base32 TOTP seed (e.g. "JBSWY3DPEHPK3PXP")
-
-    Returns the contract dict described in __init__.py.
+    Wraps the actual flow in a retry loop over header-version variants
+    so we can recover from Upstox's intermittent error 1017072 ("This
+    version is outdated") without manual intervention. See
+    `_VERSION_VARIANTS` for the fallback order.
     """
+    last = None
+    for app_version, ua_suffix, include_xdd in _VERSION_VARIANTS:
+        last = _run_login_flow(creds, app_version, ua_suffix, include_xdd)
+        if last.get("ok"):
+            return last
+        # Only retry if the failure was specifically the version check.
+        # Other failures (wrong TOTP, missing creds, redirect_uri mismatch)
+        # won't be fixed by trying a different version.
+        if "1017072" not in (last.get("error") or "") and "outdated" not in (last.get("error") or "").lower():
+            return last
+        logger.warning(
+            f"Upstox: variant (appVersion={app_version!r}, ua_suffix={ua_suffix!r}, "
+            f"include_xdd={include_xdd}) hit 1017072 — trying next variant"
+        )
+    return last or _fail("all version variants failed")
+
+
+def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_device_details: bool) -> dict:
+    """One pass of the 5-step + token-exchange flow with the given header
+    version claims. Returns the same contract as login()."""
     try:
         from curl_cffi.requests import Session as CffiSession
     except ImportError:
@@ -161,10 +187,6 @@ def login(creds: dict) -> dict:
     totp_secret = creds["totp_secret"]
 
     request_id = "WPRO-" + "".join(random.choices(string.ascii_letters + string.digits, k=10))
-    # Upstox now blocks "outdated" app-version claims at /api/login (error
-    # code 1017072 — observed 2026-05-13). We bump the appVersion + the
-    # userAgent suffix to currently-accepted values. Revisit when Upstox
-    # bumps their minimum again (the symptom is the same error code).
     headers = {
         "accept": "*/*",
         "accept-language": "en-GB,en;q=0.9",
@@ -181,13 +203,14 @@ def login(creds: dict) -> dict:
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
         ),
-        "x-device-details": (
-            "platform=WEB|osName=Mac OS/10.15.7|osVersion=Chrome/140.0.0.0|"
-            "appVersion=5.4.0|modelName=Chrome|manufacturer=Apple|"
-            f"uuid={request_id}|userAgent=Upstox 5.4.0"
-        ),
         "x-request-id": request_id,
     }
+    if include_x_device_details:
+        headers["x-device-details"] = (
+            "platform=WEB|osName=Mac OS/10.15.7|osVersion=Chrome/140.0.0.0|"
+            f"appVersion={app_version}|modelName=Chrome|manufacturer=Apple|"
+            f"uuid={request_id}|userAgent={ua_suffix}"
+        )
 
     sess = CffiSession(impersonate="chrome131")
     sess.headers.update(headers)
