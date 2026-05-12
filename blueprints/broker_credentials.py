@@ -657,7 +657,10 @@ def auto_login_endpoint(broker: str):
                        "and add your TOTP seed first.",
         }), 400
 
-    # Adapter contract: pass the SHAPE upstream alpha_live expects.
+    # Adapter contract: pass the SHAPE each broker's login() expects.
+    # `extra` carries broker-specific fields (Kotak's MPIN, Upstox/Fyers'
+    # password, etc.). Different field names get unified here so the
+    # adapter sees a stable dict shape.
     extra = db_creds.get("extra") or {}
     adapter_creds = {
         "api_key": db_creds["api_key"],
@@ -665,7 +668,14 @@ def auto_login_endpoint(broker: str):
         "redirect_uri": _build_redirect_url(broker),
         # client_code stores mobile/userid for these brokers — see broker_metadata.py
         "mobile_number": db_creds.get("client_code") or "",
-        "pin": extra.get("password") or extra.get("pin") or "",
+        # Kotak uses MPIN; Upstox/Fyers use a "password"; broker_metadata
+        # stores either under extra.* depending on the broker.
+        "pin": (
+            extra.get("mpin")
+            or extra.get("pin")
+            or extra.get("password")
+            or ""
+        ),
         "totp_secret": db_creds["totp_seed"],
     }
 

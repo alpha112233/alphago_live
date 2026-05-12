@@ -505,7 +505,7 @@ export default function BrokerManager() {
                       TOTP seed saved AND have an adapter implemented. The
                       backend returns 501 for non-implemented brokers, but
                       we gate client-side too to avoid the wasted call. */}
-                  {b.has_totp_seed && ['upstox'].includes(b.broker) && (
+                  {b.has_totp_seed && ['upstox', 'kotak'].includes(b.broker) && (
                     <Button
                       size="sm"
                       variant="secondary"

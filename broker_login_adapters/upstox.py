@@ -151,9 +151,29 @@ def login(creds: dict) -> dict:
     user_id = qs.get("user_id", [None])[0]
     client_id = qs.get("client_id", [api_key])[0]
     if not user_id:
+        # Surface Upstox's own error when the dialog endpoint returns JSON
+        # instead of redirecting. This typically happens with UDAPI100068
+        # ("Check your client_id and redirect_uri") when the registered
+        # redirect URI in the Upstox app doesn't match what we send.
+        upstox_msg = None
+        try:
+            body = resp.json()
+            errs = body.get("errors") if isinstance(body, dict) else None
+            if errs and isinstance(errs, list):
+                upstox_msg = errs[0].get("message") or errs[0].get("errorCode")
+        except Exception:
+            pass
+        if upstox_msg:
+            return _fail(
+                f"step1 OAuth dialog rejected by Upstox: {upstox_msg}. "
+                f"Verify the redirect URI registered in your Upstox developer app at "
+                f"https://account.upstox.com/developer/apps EXACTLY matches: {redirect_uri}"
+            )
         return _fail(
-            "step1 OAuth dialog: no user_id in redirect — likely the source IP is not whitelisted "
-            "with Upstox for this app, or the app's redirect_uri is mismatched"
+            "step1 OAuth dialog: no user_id in redirect. Likely causes: "
+            "(a) the redirect_uri in the Upstox app registration doesn't match "
+            f"{redirect_uri!r}; (b) the source IP is not in the Upstox app's whitelist; "
+            "(c) the client_id is wrong."
         )
 
     # Step 2: Generate OTP — Upstox sends SMS but also returns a validateOTPToken
