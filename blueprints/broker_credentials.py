@@ -462,7 +462,6 @@ def _sync_active_broker_to_env(creds: dict, broker: str) -> tuple[bool, str | No
 
 
 @broker_credentials_bp.route("/credentials/list", methods=["GET"])
-@check_session_validity
 def list_credentials_endpoint():
     """List all brokers saved by the current user. No secrets in the response."""
     from database.broker_creds_db import list_user_brokers
@@ -475,7 +474,6 @@ def list_credentials_endpoint():
 
 
 @broker_credentials_bp.route("/credentials/save", methods=["POST"])
-@check_session_validity
 def save_credentials_endpoint():
     """Save (or update) credentials for a broker. Optionally activate it.
 
@@ -540,7 +538,6 @@ def save_credentials_endpoint():
 
 
 @broker_credentials_bp.route("/credentials/<broker>/activate", methods=["PUT"])
-@check_session_validity
 def activate_credentials_endpoint(broker: str):
     """Make `broker` the active broker for this user. Syncs creds to .env."""
     from database.broker_creds_db import activate_broker, get_broker_creds
@@ -562,7 +559,6 @@ def activate_credentials_endpoint(broker: str):
 
 
 @broker_credentials_bp.route("/credentials/<broker>", methods=["DELETE"])
-@check_session_validity
 def delete_credentials_endpoint(broker: str):
     """Remove a saved broker. Does NOT clear .env if this was the active one —
     the user must activate a different broker explicitly to switch over."""
@@ -580,10 +576,13 @@ def delete_credentials_endpoint(broker: str):
 
 
 @broker_credentials_bp.route("/credentials/<broker>/instructions", methods=["GET"])
-@check_session_validity
 def broker_instructions_endpoint(broker: str):
     """Return rendered markdown instructions + form field metadata for `broker`."""
+    from flask import session
     from blueprints.broker_metadata import get_fields, get_instructions
+
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
 
     broker = (broker or "").strip().lower()
     redirect_url = _build_redirect_url(broker)
@@ -597,10 +596,13 @@ def broker_instructions_endpoint(broker: str):
 
 
 @broker_credentials_bp.route("/supported", methods=["GET"])
-@check_session_validity
 def supported_brokers_endpoint():
     """List all brokers OpenAlgo supports + which ones have detailed instructions."""
+    from flask import session
     from blueprints.broker_metadata import BROKER_FIELDS, BROKER_INSTRUCTIONS
+
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
 
     valid = [b.strip().lower() for b in (get_env_value("VALID_BROKERS") or "").split(",") if b.strip()]
     out = []
