@@ -3,6 +3,11 @@ from utils.env_check import load_and_check_env_variables  # Import the environme
 
 load_and_check_env_variables()
 
+# alphago_live fork: bind outbound HTTPS to CLIENT_IPV6 (no-op if unset).
+# Must run BEFORE any broker module imports urllib3, requests, or httpx, so
+# the monkeypatch lands before any PoolManager exists.
+import utils.source_bind  # noqa: F401
+
 import os
 import re
 import sys

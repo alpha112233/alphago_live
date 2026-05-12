@@ -2,13 +2,21 @@
 """
 Per-broker form fields + signup/setup instructions.
 
-Used by the multi-broker management endpoints (broker_credentials.py) to
-tell the React frontend which fields each broker needs and to render
-inline instructions. Each entry below MUST be kept in sync with the
-broker plugin's actual auth requirements in broker/<name>/api/auth_api.py.
+Curated 2026-05-13. Only brokers with verified IPv6 (AAAA on their API host)
+are listed — others are dropped because we can't whitelist IPv4 per-customer
+on tidi. See hostingsol/docs/DEPLOY_READINESS_AUDIT.md for the full audit.
 
-This is an alphago_live fork addition (upstream OpenAlgo is single-broker
-per instance so it doesn't need this metadata).
+Three tiers of auth shape across the kept brokers:
+  - "Fully automatable" — Kotak Neo, Groww, Dhan, AliceBlue, Indmoney: the
+    customer pastes credentials once (TOTP seed, API key+secret, or a static
+    access token) and our backend logs in daily with no human click.
+  - "Daily OAuth click" — Zerodha, Upstox, Fyers, IIFL, Flattrade: one
+    browser redirect each morning; access_token rotates EOD.
+  - "Paid subscription" — Zerodha (₹500/mo per Kite Connect app), Groww
+    (₹499+tax/mo). Customer-paid, not us.
+
+Each setup-step block has been cross-checked against the broker's CURRENT
+developer documentation, not memory, in 2026-05-13.
 """
 
 # Field shape: a list of dicts describing form inputs for that broker.
@@ -18,67 +26,61 @@ per instance so it doesn't need this metadata).
 #   type:     "text" | "password"  (frontend uses this to decide masking)
 #   required: bool
 #   help:     optional one-liner shown under the input
-#
-# Common fields:
-#   api_key, api_secret             — OAuth-style broker registrations
-#   api_key_market, api_secret_market — separate market-data app (XTS brokers)
-#   client_code                     — client/user code (Angel, Kotak, 5paisa)
-#   totp_seed                       — base32 TOTP seed for auto-login
 
 _TEXT_KEY = {"name": "api_key", "label": "API Key", "type": "text", "required": True}
 _TEXT_SECRET = {"name": "api_secret", "label": "API Secret", "type": "password", "required": True}
 _CLIENT_CODE = {"name": "client_code", "label": "Client Code / User ID", "type": "text", "required": True}
 _TOTP = {
-    "name": "totp_seed", "label": "TOTP Seed (base32)", "type": "password", "required": False,
-    "help": "Optional. Used for daily auto-login. Find it in your broker app's 2FA setup screen.",
+    "name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
+    "help": "Saves your TOTP secret so we can refresh the broker session daily without you logging in. Find it in your broker app's 2FA setup screen.",
 }
 
 BROKER_FIELDS: dict[str, list[dict]] = {
     "zerodha": [_TEXT_KEY, _TEXT_SECRET],
     "upstox": [_TEXT_KEY, _TEXT_SECRET, _TOTP],
     "dhan": [
-        {"name": "api_key", "label": "Access Token", "type": "password", "required": True,
-         "help": "Dhan uses a long-lived access token (no separate secret)."},
+        {"name": "api_key", "label": "Client ID:::API Key (joined by ':::')",
+         "type": "text", "required": True,
+         "help": "Combine your Dhan Client ID and API Key with three colons. Example: 1100000123:::abcd1234"},
+        _TEXT_SECRET,
+        {"name": "totp_seed", "label": "TOTP Seed (base32)",
+         "type": "password", "required": False,
+         "help": "Required to enable daily auto-login. From web.dhan.co → My Profile → 2FA Setup."},
     ],
     "dhan_sandbox": [
-        {"name": "api_key", "label": "Sandbox Access Token", "type": "password", "required": True},
+        {"name": "api_key", "label": "Sandbox: Client ID:::API Key", "type": "text", "required": True},
+        {"name": "api_secret", "label": "Sandbox API Secret", "type": "password", "required": True},
     ],
     "fyers": [_TEXT_KEY, _TEXT_SECRET],
     "kotak": [
-        _TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE,
-        {"name": "extra.mpin", "label": "MPIN", "type": "password", "required": True},
+        _TEXT_KEY,   # UCC
+        {"name": "api_secret", "label": "Long-lived Access Token", "type": "password", "required": True,
+         "help": "Generated once at the Kotak Neo developer portal — does NOT expire daily."},
+        {"name": "client_code", "label": "Mobile Number (with country code)", "type": "text", "required": True},
+        {"name": "extra.mpin", "label": "MPIN", "type": "password", "required": True,
+         "help": "Your Neo trading MPIN."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32)", "type": "password", "required": True,
+         "help": "Required — Kotak's daily auth flow uses TOTP, no OAuth redirect."},
     ],
-    "icicidirect": [_TEXT_KEY, _TEXT_SECRET],
-    "iifl": [_TEXT_KEY, _TEXT_SECRET, _TOTP],
+    "iifl": [_TEXT_KEY, _TEXT_SECRET],
+    "iiflcapital": [_TEXT_KEY, _TEXT_SECRET],
+    "groww": [_TEXT_KEY, _TEXT_SECRET,
+        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
+         "help": "Groww's checksum auth doesn't strictly need this — the api_key+api_secret+timestamp checksum is enough. Leave blank unless your account enforces 2FA on API calls."}],
+    "aliceblue": [
+        {"name": "api_key", "label": "App Code", "type": "text", "required": True,
+         "help": "Issued in the AliceBlue API portal as 'appcode'."},
+        _TEXT_SECRET,
+    ],
     "flattrade": [
-        {"name": "api_key", "label": "Client ID + API Key (format: CLIENT_ID:::API_KEY)",
+        {"name": "api_key", "label": "User ID:::API Key (joined by ':::')",
          "type": "text", "required": True,
-         "help": "Flattrade's BROKER_API_KEY combines two values with ':::' separator."},
+         "help": "Flattrade requires both your trading user-id and API key joined with three colons."},
         _TEXT_SECRET,
     ],
-    "shoonya": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "groww": [_TEXT_KEY, _TOTP],
-    "pocketful": [_TEXT_KEY, _TEXT_SECRET],
-    "zebu": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "tradejini": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "firstock": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "aliceblue": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "angel": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "compositedge": [
-        _TEXT_KEY, _TEXT_SECRET,
-        {"name": "api_key_market", "label": "Market Data API Key", "type": "text", "required": False},
-        {"name": "api_secret_market", "label": "Market Data API Secret", "type": "password", "required": False},
-    ],
-    "definedge": [_TEXT_KEY, _TEXT_SECRET, _TOTP],
-    "indmoney": [_TEXT_KEY, _TEXT_SECRET],
-    "ibulls": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE],
-    "paytm": [_TEXT_KEY, _TEXT_SECRET],
-    "wisdom": [_TEXT_KEY, _TEXT_SECRET, _CLIENT_CODE, _TOTP],
-    "fivepaisaxts": [
-        {"name": "api_key", "label": "API Key (format: USER_KEY:::USER_ID:::CLIENT_ID)",
-         "type": "text", "required": True,
-         "help": "5paisa XTS expects three values joined by ':::'."},
-        _TEXT_SECRET,
+    "indmoney": [
+        {"name": "api_secret", "label": "Long-lived Access Token", "type": "password", "required": True,
+         "help": "IndMoney issues a static token via their developer portal — no daily refresh."},
     ],
 }
 
@@ -87,78 +89,189 @@ BROKER_FIELDS: dict[str, list[dict]] = {
 
 BROKER_INSTRUCTIONS: dict[str, str] = {
     "zerodha": """\
-### Connect Zerodha
+### Connect Zerodha (Kite Connect)
 
-You need a **Kite Connect** developer subscription. ₹2,000/month + ₹500/app one-time.
-(Different from your Kite trading account.)
+**Cost:** ₹500/month per app, paid via your Zerodha account. (₹2,000/month also includes a quote/order subscription.)
 
-1. Go to https://kite.trade and sign in.
-2. **Create new app** → type **"Connect"**.
-3. **Redirect URL** — paste this exact value:
-   ```
-   {{REDIRECT_URL}}
-   ```
-4. Submit. Kite shows your **API key** and **API secret**.
-5. Paste them in the form here → Save → Make Active → click **Connect** on the dashboard.
+1. Log in to **https://kite.zerodha.com** with your trading account.
+2. Go to **https://developers.kite.trade** → **My Apps** → **Create new app**.
+3. Fill the form:
+   - **App name:** anything (e.g., `MyAlgo`).
+   - **App type:** **"Connect"**.
+   - **Redirect URL:** paste this exact value:
+     ```
+     {{REDIRECT_URL}}
+     ```
+   - **Postback URL:** leave blank.
+4. After payment, the app page shows your **API Key** and **API Secret**.
+5. Paste both into the form here → Save → Make Active.
+6. Click **Connect** on the dashboard. Kite will prompt for your trading password + TOTP.
 
-*Auto-login is NOT available for Zerodha — Kite Connect requires daily 1-click login at kite.zerodha.com.*
+⚠️ **Daily login required.** Zerodha's `access_token` rotates around 06:00 IST. There is no TOTP-seed-based daemon login — Zerodha doesn't expose a programmatic login API. You (or one team member) will click Connect each morning.
+
+Official docs: https://kite.trade/docs/connect/v3/
 """,
     "upstox": """\
 ### Connect Upstox
 
-1. Go to https://account.upstox.com/developer/apps
-2. **Create new app**.
-3. **Redirect URI** — paste:
-   ```
-   {{REDIRECT_URL}}
-   ```
-4. After approval, copy the **API Key** and **API Secret**.
-5. Optional — **TOTP seed**: find your TOTP secret in Upstox app's 2FA settings
-   (Settings → Security → 2FA → "Show secret"). Paste in the TOTP field below to enable auto-login.
+**Cost:** Free.
 
-*With TOTP seed, daily relogin happens automatically. Without it, you log in manually each morning.*
+1. Go to **https://account.upstox.com/developer/apps** and sign in.
+2. **New App** → choose **Live API**.
+3. Fill the form:
+   - **App name:** anything.
+   - **Redirect URI:** paste:
+     ```
+     {{REDIRECT_URL}}
+     ```
+   - **Whitelisted IPs:** add this customer's whitelisted IP (we'll show it in the next step) — Upstox enforces per-app IP whitelist.
+4. Save. The app detail page shows your **API Key** and **API Secret**.
+5. Paste them in the form here. The **TOTP Seed** field is optional but recommended — if you fill it we can refresh your session each morning automatically; if you leave it blank we'll redirect you to Upstox's login each morning.
+6. Save → Make Active.
+
+ℹ️ Upstox tokens expire daily at **03:30 IST**.
+
+Official docs: https://upstox.com/developer/api-documentation/open-api
 """,
     "dhan": """\
 ### Connect Dhan
 
-1. Go to https://web.dhan.co/profile (or https://api.dhan.co)
-2. Generate an **Access Token** in the API section.
-3. Tokens are **long-lived** (months) — no daily relogin needed.
-4. Paste the token in **Access Token** below → Save → Make Active.
-""",
-    "angel": """\
-### Connect Angel One (SmartAPI)
+**Cost:** Free.
 
-1. Sign up at https://smartapi.angelbroking.com
-2. **Create new app** → choose **"Trading API"**.
-3. Copy:
-   - **API Key**
-   - **API Secret**
-4. **Client Code** — your normal Angel trading account ID.
-5. **TOTP seed** — when you scan the Angel SmartAPI QR for 2FA, the underlying secret
-   is what we need. (In Angel's web 2FA setup, click "Can't scan?" to see it as text.)
+1. Log in to **https://web.dhan.co**.
+2. Open **My Profile → Access DhanHQ APIs** (also called "DhanHQ Trading APIs").
+3. Click **Generate API Credentials**. The page shows your **Client ID**, **API Key**, and **API Secret**.
+4. Enable **TOTP** on your account if not already (Profile → Security → 2FA). Save the base32 seed shown during setup.
+5. Under **API Settings** → **Allowed IPs**, add this customer's whitelisted IP (we'll show it on the next screen). **Mandatory from Jan 2026** for order placement.
+6. Paste into the form here:
+   - **API Key field:** `<your Client ID>:::<your API Key>` (joined with `:::`).
+   - **API Secret:** your API Secret.
+   - **TOTP Seed:** the base32 seed from step 4.
+7. Save → Make Active.
 
-*With TOTP, auto-login works daily. Without it, manual login each session.*
+ℹ️ Token is 24h. With the TOTP seed our backend renews automatically; without it the dashboard will return 401 once a day until you re-enter.
+
+Official docs: https://dhanhq.co/docs/v2/authentication/
 """,
     "fyers": """\
 ### Connect Fyers
 
-1. Go to https://myapi.fyers.in
-2. **Create app**. Type: **Web app**.
-3. **Redirect URL** — paste:
-   ```
-   {{REDIRECT_URL}}
-   ```
-4. Save the **APP_ID** (this is the API Key field) and **APP_SECRET**.
-5. Paste here → Save → Make Active.
+**Cost:** Free.
+
+1. Go to **https://myapi.fyers.in** and sign in.
+2. **Create App** → **App Type: Web**.
+3. Fill the form:
+   - **App name:** anything.
+   - **Redirect URL:** paste:
+     ```
+     {{REDIRECT_URL}}
+     ```
+4. Save. Fyers shows your **App ID** (paste as API Key) and **App Secret**.
+5. Paste both → Save → Make Active.
+
+ℹ️ Fyers issues a daily auth_code that we exchange for an access_token via SHA-256 of `{app_id}:{app_secret}`. Daily browser login required.
+
+Official docs: https://myapi.fyers.in/docs/
 """,
+    "kotak": """\
+### Connect Kotak Securities (Neo)
+
+**Cost:** Free.
+
+1. Sign up at the **Kotak Neo Trading API portal** (link from https://www.kotaksecurities.com/trading-tools/kotak-neo-trading-api/).
+2. Create a new API session. The portal issues a **long-lived Access Token** that does **not** rotate daily — copy it.
+3. Note your **UCC** (consumer code shown in your Neo account) and your **registered mobile number** (with country code, e.g. `+919876543210`).
+4. Set up TOTP for your account if not already (Neo app → Security → 2FA). Save the base32 seed.
+5. Paste into the form here:
+   - **API Key:** your UCC.
+   - **Long-lived Access Token:** the token from step 2.
+   - **Mobile Number:** with country code.
+   - **MPIN:** your Neo trading MPIN.
+   - **TOTP Seed:** the base32 seed.
+6. Save → Make Active.
+
+✅ Best broker for hands-off automation — no daily OAuth click.
+
+Official docs: https://documenter.getpostman.com/view/21534797/UzBnqmpD
+""",
+    "iiflcapital": """\
+### Connect IIFL Capital
+
+**Cost:** Free.
+
+1. Apply at **https://api.iiflcapital.com** → Developer Portal.
+2. After approval, IIFL issues an **App Key** and **App Secret**.
+3. In your app settings:
+   - **Redirect URL:** paste:
+     ```
+     {{REDIRECT_URL}}
+     ```
+   - **Whitelisted IPs:** add this customer's whitelisted IP.
+4. Paste both keys → Save → Make Active.
+
+ℹ️ Daily browser auth-code flow; access_token rotates EOD. SHA-256 checksum of `clientId+authCode+secret`.
+
+Official docs: https://api.iiflcapital.com/docs
+""",
+    "iifl": "REDIRECT_TO_IIFLCAPITAL",  # placeholder — kept for VALID_BROKERS back-compat
     "groww": """\
 ### Connect Groww
 
-1. Open Groww app → Profile → API Access → Request developer access.
-2. After approval, copy the **API Key**.
-3. **TOTP seed** — required for Groww auto-login (Groww has no OAuth, only TOTP).
-   Find it in Groww's 2FA setup. Auto-login uses this each day.
+**Cost:** ₹499 + tax/month.
+
+1. Open **https://groww.in/trade-api** and request developer access from your trading account.
+2. After approval (1-2 days), the developer page shows your **API Key** and **API Secret**.
+3. Paste both → Save → Make Active.
+
+✅ Cleanest automation — Groww's checksum auth uses `SHA256(api_key + timestamp + api_secret)` only, no browser login ever. The TOTP field is optional and only needed if you enabled 2FA on API calls separately.
+
+Official docs: https://groww.in/p/openapi
+""",
+    "aliceblue": """\
+### Connect Alice Blue (Ant)
+
+**Cost:** Free.
+
+1. Sign in to **https://ant.aliceblueonline.com/api** with your AliceBlue trading account.
+2. Generate API credentials. The page shows your **App Code** and **API Secret**.
+3. Paste both into the form → Save → Make Active.
+
+ℹ️ AliceBlue's vendor-API flow exchanges a SHA-256 checksum for a session token. No IP whitelist; no TOTP seed needed for this broker.
+
+Official docs: https://ant.aliceblueonline.com/api (login required)
+""",
+    "flattrade": """\
+### Connect Flattrade
+
+**Cost:** Free.
+
+1. Go to **https://authapi.flattrade.in** and create a developer account if you don't have one.
+2. The portal issues a **User ID** (your Flattrade trading user-id) and an **API Key**.
+3. Set the **Redirect URL** to:
+   ```
+   {{REDIRECT_URL}}
+   ```
+4. Paste into the form here:
+   - **API Key field:** `<your user-id>:::<your API Key>` (joined with `:::`).
+   - **API Secret:** the secret shown by Flattrade.
+5. Save → Make Active.
+
+ℹ️ Daily authcode → access_token via SHA-256 checksum. No IP whitelist.
+
+Official docs: https://flattrade.in/  /  https://api.flattrade.in/docs
+""",
+    "indmoney": """\
+### Connect IndMoney
+
+**Cost:** Free.
+
+1. Log in to **https://www.indmoney.com** and request API access from Settings → Developer.
+2. The portal issues a **long-lived Access Token** — copy it. No api_key/secret pair.
+3. Paste the token into **Long-lived Access Token** → Save → Make Active.
+
+✅ Simplest setup — paste once, never log in again. No daily refresh.
+
+Official docs: link from the IndMoney app's Developer screen (no public docs page yet).
 """,
 }
 
@@ -166,8 +279,8 @@ You need a **Kite Connect** developer subscription. ₹2,000/month + ₹500/app 
 DEFAULT_INSTRUCTIONS = """\
 ### Connect {{BROKER}}
 
-This broker is supported but doesn't have detailed instructions in our docs yet.
-General steps:
+This broker is supported but doesn't have detailed setup instructions in our
+docs yet. General steps:
 
 1. Sign up for the broker's developer / API program.
 2. Create a new API app.
@@ -178,7 +291,7 @@ General steps:
 4. Copy the API Key and API Secret (and Client Code / TOTP if asked).
 5. Paste below → Save → Make Active.
 
-*If you need help, reach out to support — we'll write proper instructions for {{BROKER}}.*
+If you need help, reach out to support — we'll write proper instructions for {{BROKER}}.
 """
 
 
@@ -195,4 +308,7 @@ def get_instructions(broker: str, redirect_url: str = "") -> str:
     """
     broker = (broker or "").lower()
     template = BROKER_INSTRUCTIONS.get(broker, DEFAULT_INSTRUCTIONS)
+    # iifl maps to iiflcapital — historic upstream alias.
+    if template == "REDIRECT_TO_IIFLCAPITAL":
+        template = BROKER_INSTRUCTIONS["iiflcapital"]
     return template.replace("{{REDIRECT_URL}}", redirect_url or "<your-redirect-url>").replace("{{BROKER}}", broker)
