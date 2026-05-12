@@ -1,5 +1,7 @@
-import { BookOpen, ExternalLink, Info, Loader2 } from 'lucide-react'
+import { BookOpen, Briefcase, ExternalLink, Info, Loader2, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { activateBroker, listSavedBrokers } from '@/api/brokerManager'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -80,22 +82,30 @@ export default function BrokerSelect() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [brokerConfig, setBrokerConfig] = useState<BrokerConfig | null>(null)
+  // alphago_live fork: list of brokers the user has saved credentials for.
+  // Drives the dropdown so users can switch between any saved broker.
+  const [savedBrokerIds, setSavedBrokerIds] = useState<string[]>([])
 
   useEffect(() => {
-    // Fetch broker configuration
-    const fetchBrokerConfig = async () => {
+    const loadAll = async () => {
       try {
-        const response = await fetch('/auth/broker-config', {
-          credentials: 'include',
-        })
-        const data = await response.json()
+        const [configRes, savedRes] = await Promise.all([
+          fetch('/auth/broker-config', { credentials: 'include' }).then((r) => r.json()),
+          listSavedBrokers().catch(() => [] as Awaited<ReturnType<typeof listSavedBrokers>>),
+        ])
 
-        if (data.status === 'success') {
-          setBrokerConfig(data)
-          // Auto-select the configured broker
-          setSelectedBroker(data.broker_name)
+        if (configRes.status === 'success') {
+          setBrokerConfig(configRes)
+          const savedIds = savedRes.map((b) => b.broker)
+          setSavedBrokerIds(savedIds)
+          // Default selection: the currently-active broker if it's in our saved
+          // list; otherwise the first saved broker; otherwise blank.
+          const initial = savedIds.includes(configRes.broker_name)
+            ? configRes.broker_name
+            : savedIds[0] || ''
+          setSelectedBroker(initial)
         } else {
-          setError(data.message || 'Failed to load broker configuration')
+          setError(configRes.message || 'Failed to load broker configuration')
         }
       } catch {
         setError('Failed to load broker configuration')
@@ -103,11 +113,10 @@ export default function BrokerSelect() {
         setIsLoading(false)
       }
     }
-
-    fetchBrokerConfig()
+    loadAll()
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!selectedBroker) {
@@ -121,9 +130,41 @@ export default function BrokerSelect() {
     }
 
     setIsSubmitting(true)
-    let loginUrl = ''
+    setError(null)
+    let cfg: BrokerConfig = brokerConfig
 
-    const { broker_api_key, redirect_url } = brokerConfig
+    // alphago_live fork: if the user picked a broker different from the one
+    // currently active in .env, activate it first. This rewrites BROKER_API_KEY
+    // / BROKER_API_SECRET / REDIRECT_URL on the server so the OAuth redirect
+    // below uses the right credentials.
+    if (selectedBroker !== cfg.broker_name) {
+      try {
+        await activateBroker(selectedBroker)
+        const r = await fetch('/auth/broker-config', { credentials: 'include' })
+        const fresh = await r.json()
+        if (fresh.status !== 'success') {
+          throw new Error(fresh.message || 'broker-config refresh failed')
+        }
+        cfg = fresh
+        setBrokerConfig(fresh)
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err)
+        setError(`Could not switch to ${selectedBroker}: ${msg}`)
+        setIsSubmitting(false)
+        return
+      }
+    }
+
+    if (!cfg.broker_api_key) {
+      setError(
+        `No API key saved for ${selectedBroker}. Open "Manage Brokers" to add credentials first.`
+      )
+      setIsSubmitting(false)
+      return
+    }
+
+    let loginUrl = ''
+    const { broker_api_key, redirect_url } = cfg
 
     // Build login URL based on broker type (matching original broker.html logic)
     switch (selectedBroker) {
@@ -240,56 +281,83 @@ export default function BrokerSelect() {
                 </Alert>
               )}
 
-              <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-2">
-                  <Label htmlFor="broker-select" className="block text-center">
-                    Login with your Broker
-                  </Label>
-                  <Select
-                    value={selectedBroker}
-                    onValueChange={setSelectedBroker}
-                    disabled={isSubmitting}
-                  >
-                    <SelectTrigger id="broker-select" className="w-full">
-                      <SelectValue placeholder="Select a Broker" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {allBrokers
-                        .filter((broker) => broker.id === brokerConfig?.broker_name)
-                        .map((broker) => (
-                          <SelectItem key={broker.id} value={broker.id}>
-                            {broker.name}
-                          </SelectItem>
-                        ))}
-                    </SelectContent>
-                  </Select>
+              {/* alphago_live: empty state when no brokers have been saved yet */}
+              {savedBrokerIds.length === 0 ? (
+                <div className="text-center space-y-4 py-4">
+                  <Briefcase className="h-10 w-10 mx-auto text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    No brokers configured yet. Add credentials for one or more brokers to start
+                    trading.
+                  </p>
+                  <Link to="/manage-brokers">
+                    <Button className="w-full">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add your first broker
+                    </Button>
+                  </Link>
                 </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-6">
+                  <div className="space-y-2">
+                    <Label htmlFor="broker-select" className="block text-center">
+                      Login with your Broker
+                    </Label>
+                    <Select
+                      value={selectedBroker}
+                      onValueChange={setSelectedBroker}
+                      disabled={isSubmitting}
+                    >
+                      <SelectTrigger id="broker-select" className="w-full">
+                        <SelectValue placeholder="Select a Broker" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allBrokers
+                          .filter((broker) => savedBrokerIds.includes(broker.id))
+                          .map((broker) => (
+                            <SelectItem key={broker.id} value={broker.id}>
+                              {broker.name}
+                              {broker.id === brokerConfig?.broker_name && (
+                                <span className="ml-2 text-xs text-muted-foreground">(active)</span>
+                              )}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-                {(selectedBroker === 'zerodha' || selectedBroker === 'dhan') && (
-                  <Alert className="border-amber-500/50 bg-amber-500/10">
-                    <Info className="h-4 w-4 text-amber-500" />
-                    <AlertDescription className="text-amber-200">
-                      {selectedBroker === 'zerodha'
-                        ? 'Zerodha requires an active Kite Connect data subscription for market data access.'
-                        : 'Dhan requires an active Data API subscription for market data access.'}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                <Button type="submit" className="w-full" disabled={!selectedBroker || isSubmitting}>
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Connecting...
-                    </>
-                  ) : (
-                    <>
-                      <ExternalLink className="mr-2 h-4 w-4" />
-                      Connect Account
-                    </>
+                  {(selectedBroker === 'zerodha' || selectedBroker === 'dhan') && (
+                    <Alert className="border-amber-500/50 bg-amber-500/10">
+                      <Info className="h-4 w-4 text-amber-500" />
+                      <AlertDescription className="text-amber-200">
+                        {selectedBroker === 'zerodha'
+                          ? 'Zerodha requires an active Kite Connect data subscription for market data access.'
+                          : 'Dhan requires an active Data API subscription for market data access.'}
+                      </AlertDescription>
+                    </Alert>
                   )}
-                </Button>
-              </form>
+
+                  <Button type="submit" className="w-full" disabled={!selectedBroker || isSubmitting}>
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : (
+                      <>
+                        <ExternalLink className="mr-2 h-4 w-4" />
+                        Connect Account
+                      </>
+                    )}
+                  </Button>
+
+                  <Link to="/manage-brokers" className="block">
+                    <Button type="button" variant="outline" className="w-full">
+                      <Briefcase className="h-4 w-4 mr-2" />
+                      Manage Brokers
+                    </Button>
+                  </Link>
+                </form>
+              )}
             </CardContent>
           </Card>
 
