@@ -658,24 +658,28 @@ def auto_login_endpoint(broker: str):
         }), 400
 
     # Adapter contract: pass the SHAPE each broker's login() expects.
-    # `extra` carries broker-specific fields (Kotak's MPIN, Upstox/Fyers'
-    # password, etc.). Different field names get unified here so the
-    # adapter sees a stable dict shape.
+    # Different brokers store the same kind of thing under different
+    # field names (Kotak MPIN, Upstox password, Zerodha kite password).
+    # We unify into a stable dict the adapter can self-select from.
     extra = db_creds.get("extra") or {}
+    client_code = db_creds.get("client_code") or ""
+    password_field = extra.get("password") or ""
+    pin_field = extra.get("mpin") or extra.get("pin") or password_field
     adapter_creds = {
         "api_key": db_creds["api_key"],
         "api_secret": db_creds["api_secret"],
         "redirect_uri": _build_redirect_url(broker),
-        # client_code stores mobile/userid for these brokers — see broker_metadata.py
-        "mobile_number": db_creds.get("client_code") or "",
-        # Kotak uses MPIN; Upstox/Fyers use a "password"; broker_metadata
-        # stores either under extra.* depending on the broker.
-        "pin": (
-            extra.get("mpin")
-            or extra.get("pin")
-            or extra.get("password")
-            or ""
-        ),
+        # client_code holds the broker-specific user identifier:
+        #   Zerodha → kite user_id (e.g. "ABC123")
+        #   Upstox/Kotak → mobile number (with country code)
+        #   Fyers → Fyers client_id
+        # Each adapter picks the alias it needs.
+        "mobile_number": client_code,
+        "user_id": client_code,
+        # `pin` / `password` resolve to whichever broker-specific secret
+        # is saved under extra.* — adapters use the name that fits.
+        "pin": pin_field,
+        "password": password_field,
         "totp_secret": db_creds["totp_seed"],
     }
 

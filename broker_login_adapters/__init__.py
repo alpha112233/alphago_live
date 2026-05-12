@@ -28,10 +28,12 @@ Contract:
 
 from .kotak import login as kotak_login
 from .upstox import login as upstox_login
+from .zerodha import login as zerodha_login
 
 ADAPTERS = {
     "upstox": upstox_login,
     "kotak": kotak_login,
+    "zerodha": zerodha_login,
 }
 
 

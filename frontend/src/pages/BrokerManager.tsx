@@ -477,7 +477,18 @@ export default function BrokerManager() {
                 <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>Last auth: {formatRelative(b.last_auth_at)}</div>
                   <div>Last activated: {formatRelative(b.last_activated_at)}</div>
-                  {b.last_error && <div className="text-destructive">Error: {b.last_error}</div>}
+                  {b.last_error && (
+                    <div className="text-destructive space-y-1">
+                      <div>Error: {b.last_error}</div>
+                      <button
+                        type="button"
+                        className="underline hover:no-underline text-xs"
+                        onClick={() => setConfirmDelete(b.broker)}
+                      >
+                        Delete & re-add credentials
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-2">
@@ -505,7 +516,7 @@ export default function BrokerManager() {
                       TOTP seed saved AND have an adapter implemented. The
                       backend returns 501 for non-implemented brokers, but
                       we gate client-side too to avoid the wasted call. */}
-                  {b.has_totp_seed && ['upstox', 'kotak'].includes(b.broker) && (
+                  {b.has_totp_seed && ['upstox', 'kotak', 'zerodha'].includes(b.broker) && (
                     <Button
                       size="sm"
                       variant="secondary"
