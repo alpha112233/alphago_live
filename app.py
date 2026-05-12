@@ -98,6 +98,7 @@ from database.symbol import init_db as ensure_master_contract_tables_exists
 from database.telegram_db import get_bot_config
 from database.traffic_db import init_logs_db as ensure_traffic_logs_exists
 from database.user_db import init_db as ensure_user_tables_exists
+from database.broker_creds_db import init_db as ensure_broker_creds_tables_exists  # alphago_live fork
 from extensions import socketio  # Import SocketIO
 from limiter import limiter  # Import the Limiter instance
 from restx_api import api, api_v1_bp
@@ -505,6 +506,7 @@ def setup_environment(app):
             db_init_functions = [
                 ("Auth DB", ensure_auth_tables_exists),
                 ("User DB", ensure_user_tables_exists),
+                ("Broker Creds DB", ensure_broker_creds_tables_exists),  # alphago_live fork
                 ("Master Contract DB", ensure_master_contract_tables_exists),
                 ("API Log DB", ensure_api_log_tables_exists),
                 ("Analyzer DB", ensure_analyzer_tables_exists),
