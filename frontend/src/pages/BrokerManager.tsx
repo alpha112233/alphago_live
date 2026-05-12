@@ -10,13 +10,14 @@
  * Backed by /api/broker/credentials/* endpoints (see api/brokerManager.ts).
  */
 
-import { ArrowLeft, CheckCircle2, ExternalLink, KeyRound, Loader2, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Copy, ExternalLink, KeyRound, Loader2, Network, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
   type BrokerField,
   type BrokerInstructions,
+  type HostInfo,
   type SavedBroker,
   type SaveBrokerPayload,
   type SupportedBroker,
@@ -24,6 +25,7 @@ import {
   autoLogin,
   deleteBroker,
   getBrokerInstructions,
+  getHostInfo,
   listSavedBrokers,
   listSupportedBrokers,
   saveBroker,
@@ -263,17 +265,30 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
           {instructions && (
             <>
               {/* Instructions */}
-              <div className="rounded-md border bg-muted/50 p-4 space-y-2">
+              <div className="rounded-md border bg-muted/50 p-4 space-y-3">
                 <h4 className="text-sm font-medium">Setup instructions</h4>
                 <pre className="whitespace-pre-wrap text-xs leading-relaxed font-sans text-muted-foreground">
                   {instructions.instructions_md}
                 </pre>
-                {instructions.redirect_url && (
-                  <div className="text-xs">
-                    <span className="text-muted-foreground">Redirect URL: </span>
-                    <code className="bg-background px-1 py-0.5 rounded">{instructions.redirect_url}</code>
-                  </div>
-                )}
+
+                {/* The two values the customer needs to paste into their
+                    broker's developer console — surface them prominently
+                    rather than leave the customer to scroll through the
+                    markdown looking for them. */}
+                <div className="space-y-2 pt-1 border-t">
+                  {instructions.client_ipv6 && (
+                    <CopyableCode
+                      value={instructions.client_ipv6}
+                      label="Whitelist IP:"
+                    />
+                  )}
+                  {instructions.redirect_url && (
+                    <CopyableCode
+                      value={instructions.redirect_url}
+                      label="Redirect URL:"
+                    />
+                  )}
+                </div>
               </div>
 
               <Separator />
@@ -332,9 +347,51 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
 
 // ----- main page ------------------------------------------------------------
 
+function CopyableCode({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false)
+  if (!value) return null
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch {
+      // Fallback for older browsers / non-secure contexts
+      const ta = document.createElement('textarea')
+      ta.value = value
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    }
+  }
+  return (
+    <div className="flex items-center gap-2 group">
+      {label && <span className="text-xs text-muted-foreground shrink-0">{label}</span>}
+      <code className="flex-1 text-xs bg-background border rounded px-2 py-1 font-mono break-all select-all">
+        {value}
+      </code>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={copy}
+        className="shrink-0 h-7 px-2"
+        title="Copy to clipboard"
+      >
+        {copied ? <CheckCircle2 className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+      </Button>
+    </div>
+  )
+}
+
+
 export default function BrokerManager() {
   const [saved, setSaved] = useState<SavedBroker[]>([])
   const [supported, setSupported] = useState<SupportedBroker[]>([])
+  const [hostInfo, setHostInfo] = useState<HostInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [sheetState, setSheetState] = useState<SheetState>({ open: false, editingBroker: null })
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -343,9 +400,14 @@ export default function BrokerManager() {
   async function refresh() {
     setLoading(true)
     try {
-      const [s, sup] = await Promise.all([listSavedBrokers(), listSupportedBrokers()])
+      const [s, sup, hi] = await Promise.all([
+        listSavedBrokers(),
+        listSupportedBrokers(),
+        getHostInfo().catch(() => null),
+      ])
       setSaved(s)
       setSupported(sup)
+      setHostInfo(hi)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       showToast.error(`Failed to load brokers: ${msg}`)
@@ -437,6 +499,39 @@ export default function BrokerManager() {
           Add Broker
         </Button>
       </div>
+
+      {/* Your assigned static IPv6 — same address every broker should whitelist,
+          unique to this Alpha Live instance. Brokers that enforce per-app IP
+          whitelisting (Upstox, Dhan, Fyers, Kotak, IIFL) need this in their
+          developer console before any auto-login or trading call works. */}
+      {hostInfo?.client_ipv6 && (
+        <Card className="mb-6 border-primary/40 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Network className="h-4 w-4" />
+              Your dedicated IPv6 address
+            </CardTitle>
+            <CardDescription>
+              This is a unique static IP, assigned just to your Alpha Live instance. Paste it into
+              every broker's developer console under "Whitelisted IPs" (or equivalent) before you
+              connect — brokers will refuse API calls from any other source.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <CopyableCode value={hostInfo.client_ipv6} label="IPv6:" />
+            {hostInfo.redirect_url_pattern && (
+              <CopyableCode
+                value={hostInfo.redirect_url_pattern}
+                label="Redirect URL pattern:"
+              />
+            )}
+            <p className="text-xs text-muted-foreground pt-1">
+              The <code className="text-xs">&lt;broker&gt;</code> in the redirect URL becomes the
+              actual broker name (e.g. <code className="text-xs">/upstox/callback</code>).
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {loading && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

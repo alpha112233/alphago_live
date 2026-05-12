@@ -597,6 +597,32 @@ def broker_instructions_endpoint(broker: str):
         "fields": get_fields(broker),
         "instructions_md": get_instructions(broker, redirect_url),
         "redirect_url": redirect_url,
+        # The /128 IPv6 the customer must whitelist in their broker's
+        # developer console. Pulled from os.environ so it stays in sync
+        # with what the source-bind patch will actually use at runtime.
+        "client_ipv6": os.getenv("CLIENT_IPV6", ""),
+    })
+
+
+@broker_credentials_bp.route("/credentials/host-info", methods=["GET"])
+def host_info_endpoint():
+    """Return the per-instance metadata the frontend needs to show the
+    customer (their assigned IPv6, host server URL, default redirect-URL
+    pattern). Used by /manage-brokers to render a top-level "what to
+    whitelist" banner that's the same for every broker."""
+    from flask import session
+
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    host = (os.getenv("HOST_SERVER") or "").rstrip("/")
+    return jsonify({
+        "status": "success",
+        "data": {
+            "client_ipv6": os.getenv("CLIENT_IPV6", ""),
+            "host_server": host,
+            "redirect_url_pattern": f"{host}/<broker>/callback" if host else "",
+        },
     })
 
 

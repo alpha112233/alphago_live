@@ -41,6 +41,19 @@ export interface BrokerInstructions {
   fields: BrokerField[]
   instructions_md: string
   redirect_url: string
+  client_ipv6: string
+}
+
+export interface HostInfo {
+  client_ipv6: string
+  host_server: string
+  redirect_url_pattern: string
+}
+
+export async function getHostInfo(): Promise<HostInfo> {
+  const r = await webClient.get('/api/broker/credentials/host-info')
+  if (r.data?.status !== 'success') throw new Error(r.data?.message || 'host-info failed')
+  return r.data.data as HostInfo
 }
 
 export interface SupportedBroker {
