@@ -36,8 +36,20 @@ _TOTP = {
 }
 
 BROKER_FIELDS: dict[str, list[dict]] = {
-    "zerodha": [_TEXT_KEY, _TEXT_SECRET],
-    "upstox": [_TEXT_KEY, _TEXT_SECRET, _TOTP],
+    "zerodha": [_TEXT_KEY, _TEXT_SECRET,
+        {"name": "client_code", "label": "Zerodha User ID (e.g., ABC123)", "type": "text", "required": False,
+         "help": "Required if you provide a TOTP seed — we use it as the login user-id."},
+        {"name": "extra.password", "label": "Trading Password", "type": "password", "required": False,
+         "help": "Required if you provide a TOTP seed."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
+         "help": "Enable daily auto-login: paste the TOTP secret from kite.zerodha.com → Console → Settings → Account → 2FA. With this + User ID + Password, we log in automatically each morning."}],
+    "upstox": [_TEXT_KEY, _TEXT_SECRET,
+        {"name": "client_code", "label": "Mobile Number (with country code, e.g. +91...)", "type": "text", "required": False,
+         "help": "Required if you provide a TOTP seed."},
+        {"name": "extra.password", "label": "Upstox Password", "type": "password", "required": False,
+         "help": "Required if you provide a TOTP seed."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
+         "help": "Enables daily auto-login. From Upstox app → Profile → Security → 2FA → 'Can't scan?' shows the seed."}],
     "dhan": [
         {"name": "api_key", "label": "Client ID:::API Key (joined by ':::')",
          "type": "text", "required": True,
@@ -51,7 +63,13 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "api_key", "label": "Sandbox: Client ID:::API Key", "type": "text", "required": True},
         {"name": "api_secret", "label": "Sandbox API Secret", "type": "password", "required": True},
     ],
-    "fyers": [_TEXT_KEY, _TEXT_SECRET],
+    "fyers": [_TEXT_KEY, _TEXT_SECRET,
+        {"name": "client_code", "label": "Fyers Client ID (e.g. XK12345)", "type": "text", "required": False,
+         "help": "Required if you provide a TOTP seed."},
+        {"name": "extra.pin", "label": "Trading PIN (4 digits)", "type": "password", "required": False,
+         "help": "Required if you provide a TOTP seed."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
+         "help": "Enables daily auto-login. From Fyers app → Security → 2FA → reveal the secret."}],
     "kotak": [
         _TEXT_KEY,   # UCC
         {"name": "api_secret", "label": "Long-lived Access Token", "type": "password", "required": True,
@@ -104,10 +122,12 @@ BROKER_INSTRUCTIONS: dict[str, str] = {
      ```
    - **Postback URL:** leave blank.
 4. After payment, the app page shows your **API Key** and **API Secret**.
-5. Paste both into the form here → Save → Make Active.
-6. Click **Connect** on the dashboard. Kite will prompt for your trading password + TOTP.
+5. Paste both into the form here. **Strongly recommended:** also fill in your **Zerodha User ID**, **Trading Password**, and **TOTP Seed** — this enables daily auto-login so you don't have to log in to Kite each morning.
+6. Save → Make Active.
 
-⚠️ **Daily login required.** Zerodha's `access_token` rotates around 06:00 IST. There is no TOTP-seed-based daemon login — Zerodha doesn't expose a programmatic login API. You (or one team member) will click Connect each morning.
+ℹ️ **TOTP seed for auto-login.** Zerodha doesn't expose a programmatic OAuth flow, but the daily access_token can be obtained by automating kite.zerodha.com's normal login + 2FA. We do this with `pyotp` + `curl_cffi` (the same pattern alpha_live's `refresh_upstox_token_via_totp.py` uses). Find the TOTP secret at **kite.zerodha.com → Console → Settings → Account → External 2FA** ("Can't scan QR? Reveal secret").
+
+Without the TOTP seed: you'll click **Connect** each morning at ~06:00 IST when the token rotates, and complete the login + 2FA in your browser.
 
 Official docs: https://kite.trade/docs/connect/v3/
 """,
@@ -126,10 +146,12 @@ Official docs: https://kite.trade/docs/connect/v3/
      ```
    - **Whitelisted IPs:** add this customer's whitelisted IP (we'll show it in the next step) — Upstox enforces per-app IP whitelist.
 4. Save. The app detail page shows your **API Key** and **API Secret**.
-5. Paste them in the form here. The **TOTP Seed** field is optional but recommended — if you fill it we can refresh your session each morning automatically; if you leave it blank we'll redirect you to Upstox's login each morning.
+5. Paste them in the form here. **Strongly recommended:** also fill in your **Mobile Number** (the one registered with Upstox), **Password**, and **TOTP Seed** — this enables full daily auto-login.
 6. Save → Make Active.
 
-ℹ️ Upstox tokens expire daily at **03:30 IST**.
+ℹ️ **TOTP seed for auto-login.** Upstox's OAuth issues a daily code that we exchange for an access_token. With your TOTP seed + mobile + password, we drive the login form via `pyotp` + `curl_cffi` (this is the same pattern alpha_live uses — `scripts/refresh_upstox_token_via_totp.py`). Find the seed at **Upstox app → Profile → Security → 2FA → "Can't scan?"** which shows the base32 secret.
+
+Token expiry is daily at **03:30 IST**. Without TOTP seed: you click Connect each morning.
 
 Official docs: https://upstox.com/developer/api-documentation/open-api
 """,
@@ -167,9 +189,12 @@ Official docs: https://dhanhq.co/docs/v2/authentication/
      {{REDIRECT_URL}}
      ```
 4. Save. Fyers shows your **App ID** (paste as API Key) and **App Secret**.
-5. Paste both → Save → Make Active.
+5. Paste both. **Strongly recommended:** also fill in your **Fyers Client ID** (e.g. XK12345), **Trading PIN**, and **TOTP Seed** for daily auto-login.
+6. Save → Make Active.
 
-ℹ️ Fyers issues a daily auth_code that we exchange for an access_token via SHA-256 of `{app_id}:{app_secret}`. Daily browser login required.
+ℹ️ **TOTP seed for auto-login.** Fyers' v3 auth flow exposes a programmatic login: POST `/api/v3/send_login_otp` → POST `/api/v3/verify_otp` with `pyotp`-generated 6-digit code → POST `/api/v3/verify_pin` with trading PIN → SHA-256 checksum exchange for access_token. With (client_id + PIN + TOTP seed) we run this daily without your input. Find the TOTP seed at **Fyers app → Profile → Security → 2FA**.
+
+Without TOTP seed: daily browser login required via the OAuth `auth_code` flow.
 
 Official docs: https://myapi.fyers.in/docs/
 """,
