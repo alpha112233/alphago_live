@@ -27,7 +27,7 @@ Contract:
 """
 
 from .kotak import login as kotak_login
-from .upstox import login as upstox_login
+from .upstox import login as upstox_login, precheck as upstox_precheck
 from .zerodha import login as zerodha_login
 
 ADAPTERS = {
@@ -36,7 +36,22 @@ ADAPTERS = {
     "zerodha": zerodha_login,
 }
 
+# Optional cheap pre-save validators. Each returns {ok, error}. Used by
+# /api/broker/credentials/save to catch obvious config errors at save time
+# instead of letting the user discover them only at auto-login time.
+# Only brokers where a real-network check is cheap AND doesn't consume
+# state (TOTP windows, OTP SMS, rate-limit quota) belong here.
+PRECHECKS = {
+    "upstox": upstox_precheck,
+}
+
 
 def adapter_for(broker: str):
     """Return the login() callable for a broker, or None if not supported."""
     return ADAPTERS.get((broker or "").lower())
+
+
+def precheck_for(broker: str):
+    """Return the precheck() callable for a broker, or None if no cheap
+    pre-save validation is available."""
+    return PRECHECKS.get((broker or "").lower())

@@ -499,6 +499,22 @@ def save_credentials_endpoint():
     if not api_key:
         return jsonify({"status": "error", "message": "'api_key' is required"}), 400
 
+    # Optional pre-save validation — cheap config-only check per broker, to
+    # surface obvious mismatches (Upstox redirect_uri, etc.) at save time
+    # instead of letting the user discover them only at auto-login time.
+    from broker_login_adapters import precheck_for
+    precheck = precheck_for(broker)
+    if precheck is not None:
+        precheck_result = precheck({
+            "api_key": api_key,
+            "redirect_uri": _build_redirect_url(broker),
+        })
+        if not precheck_result.get("ok"):
+            return jsonify({
+                "status": "error",
+                "message": precheck_result.get("error") or "Pre-save validation failed",
+            }), 400
+
     try:
         add_or_update_broker_creds(
             user_id=user_id,

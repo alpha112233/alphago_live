@@ -69,6 +69,61 @@ def _fail(error: str, **extra: Any) -> dict:
     return {"ok": False, "access_token": None, "error": error, **extra}
 
 
+def precheck(creds: dict) -> dict:
+    """Lightweight validation: does the (api_key, redirect_uri) pair match
+    what's registered in the customer's Upstox developer app?
+
+    Single GET to /authorization/dialog — Upstox responds with either a
+    302 redirect (config OK, proceed to actual login) or a JSON error
+    (UDAPI100068 etc., config mismatch). No TOTP consumed.
+
+    Designed to run at save-time so the user finds out about a config
+    error immediately, not at auto-login time. Returns the same contract
+    shape as login(): {ok, error, ...}.
+    """
+    api_key = (creds.get("api_key") or "").strip()
+    redirect_uri = (creds.get("redirect_uri") or "").strip()
+    if not api_key or not redirect_uri:
+        return _ok("")  # nothing to check yet
+
+    try:
+        from curl_cffi.requests import Session as CffiSession
+    except ImportError:
+        # If curl_cffi isn't installed (e.g. dev env), skip the precheck
+        # rather than blocking save.
+        return _ok("")
+
+    sess = CffiSession(impersonate="chrome131")
+    try:
+        resp = sess.get(
+            AUTH_DIALOG_URL,
+            params={"response_type": "code", "client_id": api_key, "redirect_uri": redirect_uri},
+            allow_redirects=False,  # don't follow — we just need the response shape
+            timeout=10,
+        )
+    except Exception as e:
+        # Network errors don't mean creds are wrong — let save proceed.
+        return _ok("")
+
+    # 302 with a Location header = config OK. Anything else (200 with JSON
+    # error body) = bad config.
+    if resp.status_code in (302, 303):
+        return _ok("")
+    try:
+        body = resp.json()
+    except Exception:
+        return _ok("")  # unrecognized response shape — don't block save
+    errs = body.get("errors") if isinstance(body, dict) else None
+    if errs and isinstance(errs, list):
+        msg = errs[0].get("message") or errs[0].get("errorCode") or "unknown"
+        return _fail(
+            f"Upstox rejected this api_key + redirect_uri combination: {msg}. "
+            f"In your Upstox developer app at https://account.upstox.com/developer/apps, "
+            f"set 'Redirect URI' to EXACTLY: {redirect_uri}"
+        )
+    return _ok("")
+
+
 def login(creds: dict) -> dict:
     """Drive the Upstox daily 2FA flow + token exchange.
 
