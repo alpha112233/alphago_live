@@ -21,7 +21,10 @@ from utils.logging import get_logger
 # Initialize logger
 logger = get_logger(__name__)
 
-BROKER_API_KEY = get_broker_api_key()
+# alphago_live fork: BROKER_API_KEY used to be cached here at import time,
+# which broke broker switching (the cached value stayed stale after the user
+# activated a different broker via /api/broker/credentials/<b>/activate).
+# Now read per-request via os.getenv at the call sites below.
 LOGIN_RATE_LIMIT_MIN = get_login_rate_limit_min()
 LOGIN_RATE_LIMIT_HOUR = get_login_rate_limit_hour()
 
@@ -832,7 +835,8 @@ def broker_callback(broker, para=None):
         session["broker"] = broker
         logger.info(f"Successfully connected broker: {broker}")
         if broker == "zerodha":
-            auth_token = f"{BROKER_API_KEY}:{auth_token}"
+            # Read per-request — see fork note at top of file.
+            auth_token = f"{os.getenv('BROKER_API_KEY')}:{auth_token}"
         if broker == "dhan":
             auth_token = f"{auth_token}"
 
