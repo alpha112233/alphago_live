@@ -646,61 +646,72 @@ def supported_brokers_endpoint():
     return jsonify({"status": "success", "data": out})
 
 
-@broker_credentials_bp.route("/credentials/<broker>/auto-login", methods=["POST"])
-def auto_login_endpoint(broker: str):
-    """Run the broker-specific daemon auto-login flow using the user's saved
-    TOTP seed. On success the broker session is established as if the user
-    had completed the manual OAuth/2FA flow.
-
-    Per-broker behaviour (only `upstox` is implemented in this first cut):
-      - Decrypts broker_creds_db row for current user + broker
-      - Runs broker_login_adapters.<broker>.login(creds)
-      - On success, persists access_token via OpenAlgo's normal auth flow
-        (database.auth_db.upsert_auth) so subsequent broker API calls work
-      - Returns {ok, access_token (masked), error, ...}
-
-    Auth: requires the session 'user' to be set (same level as the other
-    multi-broker endpoints — usable in the password-authenticated state
-    before any broker session exists).
-    """
+@broker_credentials_bp.route("/credentials/auto-login-status", methods=["GET"])
+def auto_login_status_endpoint():
+    """Surface the daily auto-login scheduler's state (enabled + next-run)
+    so the React UI can show "next run at 08:00 IST tomorrow" alongside
+    the per-broker last_auth_at fields the list endpoint already returns."""
     from flask import session
-    from datetime import datetime, timezone
+
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    try:
+        from services.auto_login_scheduler_service import get_scheduler_status
+        sched = get_scheduler_status()
+    except Exception as e:
+        logger.exception("auto-login-status read failed")
+        sched = {"enabled": None, "running": False, "next_run": None, "error": str(e)}
+
+    return jsonify({"status": "success", "data": sched})
+
+
+def run_auto_login_for_broker(user_id: int, username: str, broker: str) -> dict:
+    """Core auto-login logic, shared between the HTTP route and the daily
+    scheduler. Decrypts creds → runs adapter → persists access_token →
+    marks success/error in broker_creds_db. Does NOT touch flask.session.
+
+    Returns:
+        {"ok": True,  "access_token": "...", "broker": ..., "user_id": ...,
+         "expires_at": ..., "feed_token": ...}
+        {"ok": False, "error": "...", "error_kind": "no_adapter|no_creds|no_totp|adapter_fail|persist_fail"}
+    """
     from database.broker_creds_db import (
         get_broker_creds,
+        get_active_broker,
         mark_auth_error,
         mark_auth_success,
     )
     from broker_login_adapters import adapter_for
 
-    if not session.get("user"):
-        return jsonify({"status": "error", "message": "Not authenticated"}), 401
-
-    user_id = _current_user_id()
-    if user_id is None:
-        return jsonify({"status": "error", "message": "Not authenticated"}), 401
-
     broker = (broker or "").strip().lower()
     adapter = adapter_for(broker)
     if adapter is None:
-        return jsonify({
-            "status": "error",
-            "message": f"Auto-login adapter for '{broker}' is not implemented yet. "
-                       f"Click 'Connect' in the dashboard to do the broker login manually.",
-        }), 501
+        return {
+            "ok": False,
+            "error_kind": "no_adapter",
+            "error": f"Auto-login adapter for '{broker}' is not implemented yet. "
+                     f"Click 'Connect' in the dashboard to do the broker login manually.",
+        }
 
     db_creds = get_broker_creds(user_id, broker)
     if db_creds is None:
-        return jsonify({"status": "error", "message": f"No saved credentials for '{broker}'"}), 404
+        return {
+            "ok": False,
+            "error_kind": "no_creds",
+            "error": f"No saved credentials for '{broker}'",
+        }
 
     # Most brokers' auto-login needs a TOTP seed. IndMoney is the exception
     # — its "access token" is the long-lived secret the customer pastes, so
     # we don't gate it on totp_seed.
     if broker != "indmoney" and not db_creds.get("totp_seed"):
-        return jsonify({
-            "status": "error",
-            "message": "Auto-login needs a saved TOTP seed. Edit the broker in Manage Brokers "
-                       "and add your TOTP seed first.",
-        }), 400
+        return {
+            "ok": False,
+            "error_kind": "no_totp",
+            "error": "Auto-login needs a saved TOTP seed. Edit the broker in Manage Brokers "
+                     "and add your TOTP seed first.",
+        }
 
     # Adapter contract: pass the SHAPE each broker's login() expects.
     # Different brokers store the same kind of thing under different
@@ -729,19 +740,18 @@ def auto_login_endpoint(broker: str):
     }
 
     result = adapter(adapter_creds)
-
     if not result.get("ok"):
         mark_auth_error(user_id, broker, result.get("error") or "unknown")
-        return jsonify({
-            "status": "error",
-            "message": result.get("error") or "Auto-login failed",
-        }), 502
+        return {
+            "ok": False,
+            "error_kind": "adapter_fail",
+            "error": result.get("error") or "Auto-login failed",
+        }
 
     # Persist the access_token via OpenAlgo's normal auth path so subsequent
     # broker API calls (orders, holdings, etc.) find it.
     try:
         from database.auth_db import upsert_auth
-        username = session.get("user")
         upsert_auth(
             name=username,
             auth_token=result["access_token"],
@@ -752,25 +762,74 @@ def auto_login_endpoint(broker: str):
         )
     except Exception as e:
         logger.exception("Auto-login succeeded but auth_db persist failed")
-        return jsonify({
-            "status": "error",
-            "message": f"Auto-login succeeded but session persist failed: {e}",
-        }), 500
+        return {
+            "ok": False,
+            "error_kind": "persist_fail",
+            "error": f"Auto-login succeeded but session persist failed: {e}",
+        }
+
+    # If this broker is the user's active one, refresh os.environ so the
+    # rest of OpenAlgo (auth.py, brlogin.py, the broker plugin's order
+    # placement path) reads the just-minted credentials without a restart.
+    try:
+        if get_active_broker(user_id) == broker:
+            _sync_active_broker_to_env(db_creds, broker)
+    except Exception:
+        logger.exception("os.environ sync skipped (non-fatal)")
+
+    mark_auth_success(user_id, broker)
+    return {
+        "ok": True,
+        "access_token": result["access_token"],
+        "broker": broker,
+        "user_id": result.get("user_id"),
+        "expires_at": result.get("expires_at"),
+        "feed_token": result.get("feed_token"),
+    }
+
+
+@broker_credentials_bp.route("/credentials/<broker>/auto-login", methods=["POST"])
+def auto_login_endpoint(broker: str):
+    """HTTP wrapper around run_auto_login_for_broker — adds session auth +
+    flask-session bookkeeping. Returns masked metadata only (never the
+    raw token). The daily scheduler calls the same helper without going
+    through this endpoint."""
+    from flask import session
+    from datetime import datetime, timezone
+
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    username = session["user"]
+    result = run_auto_login_for_broker(user_id, username, (broker or "").strip().lower())
+
+    if not result.get("ok"):
+        # Map error_kind to a sensible HTTP code so the React UI's branching
+        # on .response.status stays meaningful.
+        code = {
+            "no_adapter":   501,
+            "no_creds":     404,
+            "no_totp":      400,
+            "persist_fail": 500,
+        }.get(result.get("error_kind"), 502)
+        return jsonify({"status": "error", "message": result.get("error") or "Auto-login failed"}), code
 
     # Update the in-Flask session too so the user lands on the dashboard
     # in a fully-authed state if they're driving this from the UI.
-    session["broker"] = broker
+    session["broker"] = result["broker"]
     session["logged_in"] = True
     session["login_time"] = datetime.now(timezone.utc).isoformat()
-
-    mark_auth_success(user_id, broker)
 
     # Don't leak the token to the frontend — surface metadata only.
     token = result["access_token"]
     masked = f"{token[:6]}...{token[-6:]}" if len(token) > 16 else "***"
     return jsonify({
         "status": "success",
-        "broker": broker,
+        "broker": result["broker"],
         "access_token_masked": masked,
         "user_id": result.get("user_id"),
         "expires_at": result.get("expires_at"),

@@ -122,3 +122,18 @@ export async function autoLogin(broker: string): Promise<AutoLoginResult> {
   }
   return r.data as AutoLoginResult
 }
+
+export interface AutoLoginSchedulerStatus {
+  enabled: boolean | null
+  running: boolean
+  next_run: string | null
+  error?: string
+}
+
+export async function getAutoLoginSchedulerStatus(): Promise<AutoLoginSchedulerStatus> {
+  const r = await webClient.get('/api/broker/credentials/auto-login-status')
+  if (r.data?.status !== 'success') {
+    throw new Error(r.data?.message || 'auto-login-status failed')
+  }
+  return r.data.data as AutoLoginSchedulerStatus
+}

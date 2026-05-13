@@ -583,6 +583,18 @@ def setup_environment(app):
             except Exception as e:
                 logger.error(f"Failed to initialize Historify scheduler: {e}")
 
+            # alphago_live fork: daily 08:00 IST broker auto-login.
+            # Mints a fresh access_token for each saved broker before
+            # market open so customers' strategies can place orders at
+            # 09:15 without anyone clicking anything.
+            try:
+                from services.auto_login_scheduler_service import init_auto_login_scheduler
+
+                init_auto_login_scheduler()
+                logger.debug("Broker auto-login scheduler initialized")
+            except Exception as e:
+                logger.error(f"Failed to initialize auto-login scheduler: {e}")
+
             # Auto-start analyzer mode services (depends on DB being ready)
             try:
                 from database.settings_db import get_analyze_mode

@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 
 import {
+  type AutoLoginSchedulerStatus,
   type BrokerField,
   type BrokerInstructions,
   type HostInfo,
@@ -24,6 +25,7 @@ import {
   activateBroker,
   autoLogin,
   deleteBroker,
+  getAutoLoginSchedulerStatus,
   getBrokerInstructions,
   getHostInfo,
   listSavedBrokers,
@@ -392,6 +394,7 @@ export default function BrokerManager() {
   const [saved, setSaved] = useState<SavedBroker[]>([])
   const [supported, setSupported] = useState<SupportedBroker[]>([])
   const [hostInfo, setHostInfo] = useState<HostInfo | null>(null)
+  const [schedulerStatus, setSchedulerStatus] = useState<AutoLoginSchedulerStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [sheetState, setSheetState] = useState<SheetState>({ open: false, editingBroker: null })
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
@@ -400,14 +403,16 @@ export default function BrokerManager() {
   async function refresh() {
     setLoading(true)
     try {
-      const [s, sup, hi] = await Promise.all([
+      const [s, sup, hi, sched] = await Promise.all([
         listSavedBrokers(),
         listSupportedBrokers(),
         getHostInfo().catch(() => null),
+        getAutoLoginSchedulerStatus().catch(() => null),
       ])
       setSaved(s)
       setSupported(sup)
       setHostInfo(hi)
+      setSchedulerStatus(sched)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       showToast.error(`Failed to load brokers: ${msg}`)
@@ -531,6 +536,31 @@ export default function BrokerManager() {
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* Daily auto-login scheduler — surfaces the next run so customers
+          can verify their saved TOTP seeds will actually fire pre-market. */}
+      {schedulerStatus?.enabled && (
+        <div className="mb-4 text-xs text-muted-foreground">
+          <span className="font-medium">Auto-login scheduler:</span>{' '}
+          {schedulerStatus.running ? 'running' : 'idle'}
+          {schedulerStatus.next_run && (
+            <>
+              {' · '}next run{' '}
+              <code className="text-xs">
+                {new Date(schedulerStatus.next_run).toLocaleString('en-IN', {
+                  timeZone: 'Asia/Kolkata',
+                  weekday: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: false,
+                })}{' '}
+                IST
+              </code>
+            </>
+          )}
+          {' · '}each saved broker is refreshed before market open.
+        </div>
       )}
 
       {loading && (
