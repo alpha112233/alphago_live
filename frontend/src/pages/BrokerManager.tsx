@@ -173,13 +173,19 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
   async function handleSave() {
     if (!broker || !instructions) return
 
-    // Validate required fields
-    const missing = instructions.fields
-      .filter((f) => f.required && !fieldValues[f.name]?.trim())
-      .map((f) => f.label)
-    if (missing.length > 0) {
-      showToast.error(`Required: ${missing.join(', ')}`)
-      return
+    // Required-field check. On Edit the placeholder is "Leave blank to
+    // keep existing" — blanks mean "preserve what's already in the DB",
+    // not "delete the value". So skip the required check entirely on
+    // Edit; the backend cross-references the existing row and rejects
+    // only when there's truly no saved value to preserve.
+    if (!isEdit) {
+      const missing = instructions.fields
+        .filter((f) => f.required && !fieldValues[f.name]?.trim())
+        .map((f) => f.label)
+      if (missing.length > 0) {
+        showToast.error(`Required: ${missing.join(', ')}`)
+        return
+      }
     }
 
     // Build payload — flatten "extra.<key>" fields into a sub-object

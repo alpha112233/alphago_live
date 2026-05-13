@@ -495,9 +495,27 @@ def save_credentials_endpoint():
     if not broker:
         return jsonify({"status": "error", "message": "'broker' is required"}), 400
 
+    # api_key handling: required on first save, optional on Edit (blank
+    # means "keep what's saved"). Look up the existing row to decide.
+    existing = get_broker_creds(user_id, broker)
     api_key = (data.get("api_key") or "").strip()
     if not api_key:
-        return jsonify({"status": "error", "message": "'api_key' is required"}), 400
+        if existing and existing.get("api_key"):
+            api_key = existing["api_key"]   # preserve
+        else:
+            return jsonify({"status": "error", "message": "'api_key' is required"}), 400
+
+    # Merge "extra" the same way: callers on Edit send only the keys
+    # they're changing, blank values for the rest. Preserve existing
+    # sub-keys when the incoming value is empty.
+    incoming_extra = data.get("extra") if isinstance(data.get("extra"), dict) else {}
+    existing_extra = (existing or {}).get("extra") or {}
+    merged_extra: dict = dict(existing_extra)
+    for k, v in (incoming_extra or {}).items():
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue   # blank → preserve existing
+        merged_extra[k] = v
+    extra_to_save = merged_extra if merged_extra else None
 
     # Optional pre-save validation — cheap config-only check per broker, to
     # surface obvious mismatches (Upstox redirect_uri, etc.) at save time
@@ -525,7 +543,7 @@ def save_credentials_endpoint():
             api_secret_market=(data.get("api_secret_market") or "").strip() or None,
             client_code=(data.get("client_code") or "").strip() or None,
             totp_seed=(data.get("totp_seed") or "").strip() or None,
-            extra=data.get("extra") if isinstance(data.get("extra"), dict) else None,
+            extra=extra_to_save,
             notes=(data.get("notes") or "").strip() or None,
         )
     except Exception as e:
