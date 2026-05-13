@@ -28,8 +28,10 @@ Contract:
 
 from .aliceblue import login as aliceblue_login
 from .dhan import login as dhan_login
+from .flattrade import login as flattrade_login
 from .fyers import login as fyers_login
 from .groww import login as groww_login
+from .indmoney import login as indmoney_login
 from .kotak import login as kotak_login
 from .upstox import login as upstox_login, precheck as upstox_precheck
 from .zerodha import login as zerodha_login
@@ -42,6 +44,8 @@ ADAPTERS = {
     "fyers": fyers_login,
     "aliceblue": aliceblue_login,
     "groww": groww_login,
+    "flattrade": flattrade_login,
+    "indmoney": indmoney_login,
 }
 
 # Optional cheap pre-save validators. Each returns {ok, error}. Used by

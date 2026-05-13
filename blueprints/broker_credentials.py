@@ -692,7 +692,10 @@ def auto_login_endpoint(broker: str):
     if db_creds is None:
         return jsonify({"status": "error", "message": f"No saved credentials for '{broker}'"}), 404
 
-    if not db_creds.get("totp_seed"):
+    # Most brokers' auto-login needs a TOTP seed. IndMoney is the exception
+    # — its "access token" is the long-lived secret the customer pastes, so
+    # we don't gate it on totp_seed.
+    if broker != "indmoney" and not db_creds.get("totp_seed"):
         return jsonify({
             "status": "error",
             "message": "Auto-login needs a saved TOTP seed. Edit the broker in Manage Brokers "

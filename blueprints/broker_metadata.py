@@ -109,6 +109,10 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "type": "text", "required": True,
          "help": "Flattrade requires both your trading user-id and API key joined with three colons."},
         _TEXT_SECRET,
+        {"name": "extra.password", "label": "Trading Password",
+         "type": "password", "required": False,
+         "help": "Same password you use to log in at auth.flattrade.in. Required for daemon auto-login."},
+        _TOTP,
     ],
     "indmoney": [
         {"name": "api_secret", "label": "Long-lived Access Token", "type": "password", "required": True,
@@ -313,16 +317,20 @@ Official docs: https://ant.aliceblueonline.com/api (login required)
 
 1. Go to **https://authapi.flattrade.in** and create a developer account if you don't have one.
 2. The portal issues a **User ID** (your Flattrade trading user-id) and an **API Key**.
-3. Set the **Redirect URL** to:
+3. Set the **Redirect URL** in your Flattrade developer app to:
    ```
    {{REDIRECT_URL}}
    ```
-4. Paste into the form here:
+4. Enable **TOTP-based 2FA** in Flattrade (Settings → Security → TOTP). Save
+   the Base32 secret when the QR code is displayed.
+5. Paste into the form here:
    - **API Key field:** `<your user-id>:::<your API Key>` (joined with `:::`).
    - **API Secret:** the secret shown by Flattrade.
-5. Save → Make Active.
+   - **Trading Password:** the same password you use at auth.flattrade.in.
+   - **TOTP Seed:** the Base32 secret from step 4.
+6. Save → Make Active.
 
-ℹ️ Daily authcode → access_token via SHA-256 checksum. No IP whitelist.
+✅ Daemon auto-login: enabled. We drive `/auth/session` + `/ftauth` + `/trade/apitoken` daily with no human click.
 
 Official docs: https://flattrade.in/  /  https://api.flattrade.in/docs
 """,
@@ -333,9 +341,9 @@ Official docs: https://flattrade.in/  /  https://api.flattrade.in/docs
 
 1. Log in to **https://www.indmoney.com** and request API access from Settings → Developer.
 2. The portal issues a **long-lived Access Token** — copy it. No api_key/secret pair.
-3. Paste the token into **Long-lived Access Token** → Save → Make Active.
+3. Paste the token into **Long-lived Access Token** → Save → Make Active → click **Auto Login** to activate the session.
 
-✅ Simplest setup — paste once, never log in again. No daily refresh.
+✅ Simplest setup — paste once, no daily refresh and no TOTP. Auto Login just re-arms the saved token; you only ever re-paste if you rotate the token on IndMoney's console.
 
 Official docs: link from the IndMoney app's Developer screen (no public docs page yet).
 """,

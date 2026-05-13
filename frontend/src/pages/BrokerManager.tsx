@@ -610,8 +610,11 @@ export default function BrokerManager() {
                   {/* Auto-login button — only shown for brokers that have a
                       TOTP seed saved AND have an adapter implemented. The
                       backend returns 501 for non-implemented brokers, but
-                      we gate client-side too to avoid the wasted call. */}
-                  {b.has_totp_seed && ['upstox', 'kotak', 'zerodha', 'dhan', 'fyers', 'aliceblue', 'groww'].includes(b.broker) && (
+                      we gate client-side too to avoid the wasted call.
+                      IndMoney is the one exception: it uses a long-lived
+                      access token instead of TOTP, so we surface the button
+                      regardless of has_totp_seed. */}
+                  {((b.has_totp_seed && ['upstox', 'kotak', 'zerodha', 'dhan', 'fyers', 'aliceblue', 'groww', 'flattrade'].includes(b.broker)) || b.broker === 'indmoney') && (
                     <Button
                       size="sm"
                       variant="secondary"
