@@ -99,7 +99,7 @@ export function Navbar() {
                 className="flex items-center gap-2 px-2"
                 onClick={() => setMobileOpen(false)}
               >
-                <img src="/logo.png" alt="Alpha Live Trading" className="h-8 w-8" />
+                <img src="/alpha-live-logo.svg" alt="Alpha Live Trading" className="h-8 w-8" />
                 <span className="font-semibold">Alpha Live Trading</span>
               </Link>
 
@@ -164,7 +164,7 @@ export function Navbar() {
 
         {/* Logo */}
         <Link to="/dashboard" className="flex items-center gap-2 mr-6">
-          <img src="/logo.png" alt="Alpha Live Trading" className="h-8 w-8" />
+          <img src="/alpha-live-logo.svg" alt="Alpha Live Trading" className="h-8 w-8" />
           <span className="hidden font-semibold sm:inline-block">Alpha Live Trading</span>
         </Link>
 

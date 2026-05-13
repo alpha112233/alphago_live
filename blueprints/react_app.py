@@ -25,7 +25,7 @@ def serve_react_app():
         return (
             """
         <html>
-        <head><title>OpenAlgo - Frontend Not Available</title></head>
+        <head><title>Alpha Live Trading - Frontend Not Available</title></head>
         <body style="font-family: system-ui; padding: 40px; max-width: 600px; margin: 0 auto;">
             <h1>Frontend Not Built</h1>
             <p>The React frontend is not available. To build it:</p>
@@ -540,6 +540,14 @@ def serve_logo():
     if not is_react_frontend_available():
         return "Not found", 404
     return send_from_directory(FRONTEND_DIST, "logo.png")
+
+
+@react_bp.route("/alpha-live-logo.svg")
+def serve_alpha_live_logo():
+    """Serve the SVG brand mark used by the React pages + favicon link."""
+    if not is_react_frontend_available():
+        return "Not found", 404
+    return send_from_directory(FRONTEND_DIST, "alpha-live-logo.svg")
 
 
 @react_bp.route("/apple-touch-icon.png")

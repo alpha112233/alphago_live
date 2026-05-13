@@ -44,7 +44,7 @@ export default function Home() {
               </SheetTrigger>
               <SheetContent side="left" className="w-80">
                 <div className="flex items-center gap-2 mb-8">
-                  <img src="/logo.png" alt="Alpha Live Trading" className="h-8 w-8" />
+                  <img src="/alpha-live-logo.svg" alt="Alpha Live Trading" className="h-8 w-8" />
                   <span className="text-xl font-semibold">Alpha Live Trading</span>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -117,7 +117,7 @@ export default function Home() {
             </Sheet>
 
             <Link to="/" className="flex items-center gap-2">
-              <img src="/logo.png" alt="Alpha Live Trading" className="h-8 w-8" />
+              <img src="/alpha-live-logo.svg" alt="Alpha Live Trading" className="h-8 w-8" />
               <span className="text-xl font-bold hidden sm:inline">Alpha Live Trading</span>
             </Link>
           </div>

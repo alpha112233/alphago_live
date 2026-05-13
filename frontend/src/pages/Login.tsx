@@ -149,7 +149,7 @@ export default function Login() {
           <Card className="w-full max-w-md order-1 lg:order-2 shadow-xl">
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">
-                <img src="/logo.png" alt="Alpha Live Trading" className="h-20 w-20" />
+                <img src="/alpha-live-logo.svg" alt="Alpha Live Trading" className="h-20 w-20" />
               </div>
               <CardTitle className="text-2xl">Welcome Back</CardTitle>
               <CardDescription>Sign in to your Alpha Live Trading account</CardDescription>
