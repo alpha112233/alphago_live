@@ -27,6 +27,7 @@ Contract:
 """
 
 from .dhan import login as dhan_login
+from .fyers import login as fyers_login
 from .kotak import login as kotak_login
 from .upstox import login as upstox_login, precheck as upstox_precheck
 from .zerodha import login as zerodha_login
@@ -36,6 +37,7 @@ ADAPTERS = {
     "kotak": kotak_login,
     "zerodha": zerodha_login,
     "dhan": dhan_login,
+    "fyers": fyers_login,
 }
 
 # Optional cheap pre-save validators. Each returns {ok, error}. Used by
