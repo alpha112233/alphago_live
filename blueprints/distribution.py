@@ -11,7 +11,8 @@ REST endpoints (Flask session auth, the inbox owner manages their own):
     GET    /api/distribution/inboxes/<id>/signals  recent signal log
 
 Public webhook (no Flask session — API-key only):
-    POST   /distribution/inbox/<inbox_slug>        signal receiver
+    POST   /distribution/inbox/<inbox_slug>            signal receiver
+    GET    /distribution/inbox/<inbox_slug>/positions  current broker positionbook
 
 Webhook payload shape (publisher → subscriber):
     {
@@ -450,4 +451,68 @@ def receive_signal_endpoint(inbox_slug: str):
         "broker": broker,
         "broker_order_id": broker_order_id,
         "response": response_data,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# Positionbook readback (no session — same Bearer api_key as webhook)
+# ---------------------------------------------------------------------------
+
+
+@distribution_bp.route("/distribution/inbox/<inbox_slug>/positions", methods=["GET"])
+def get_positions_endpoint(inbox_slug: str):
+    """Return the current broker positionbook for the inbox's owner.
+
+    Auth + IP-allowlist + broker-resolve are identical to the webhook —
+    callers (the publisher, or a customer's own tooling) present
+    `Authorization: Bearer <api_key>` and we route through the same broker
+    the inbox would route orders through. Read-only — no side effects.
+    """
+    src_ip = _real_source_ip()
+
+    inbox = get_inbox_by_slug(inbox_slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox"}), 404
+    if inbox.status != "active":
+        return jsonify({"status": "error", "message": "inbox disabled"}), 403
+
+    presented_key = _extract_bearer_or_apikey_header()
+    if not check_api_key(inbox, presented_key):
+        return jsonify({
+            "status": "error",
+            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
+        }), 401
+
+    if not _ip_is_allowed(src_ip, inbox.allowed_ips):
+        return jsonify({
+            "status": "error",
+            "message": f"source IP {src_ip} not in this inbox's allowlist",
+        }), 403
+
+    broker, auth_token, err = _resolve_routing_broker(inbox.user_id, inbox.broker_override)
+    if err is not None:
+        return jsonify({"status": "error", "broker": broker, "message": err}), 503
+
+    try:
+        from services.positionbook_service import get_positionbook
+        success, response_data, status_code = get_positionbook(
+            auth_token=auth_token, broker=broker,
+        )
+    except Exception as e:
+        logger.exception("get_positionbook raised")
+        return jsonify({"status": "error", "broker": broker, "message": str(e)}), 500
+
+    if not success:
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "message": (response_data or {}).get("message") or "failed to fetch positions",
+        }), status_code
+
+    from datetime import datetime, timezone
+    return jsonify({
+        "status": "success",
+        "broker": broker,
+        "data": (response_data or {}).get("data") or [],
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
     }), 200
