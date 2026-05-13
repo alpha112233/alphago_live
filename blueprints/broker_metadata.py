@@ -92,6 +92,13 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "api_key", "label": "App Code", "type": "text", "required": True,
          "help": "Issued in the AliceBlue API portal as 'appcode'."},
         _TEXT_SECRET,
+        {"name": "client_code", "label": "AliceBlue Client ID (e.g., AB123456)",
+         "type": "text", "required": False,
+         "help": "Required for daemon auto-login. Skip if you'll click the daily Connect button manually."},
+        {"name": "extra.password", "label": "Trading Password",
+         "type": "password", "required": False,
+         "help": "The same password you use on ant.aliceblueonline.com. Required for daemon auto-login."},
+        _TOTP,
     ],
     "flattrade": [
         {"name": "api_key", "label": "User ID:::API Key (joined by ':::')",
@@ -276,9 +283,14 @@ Official docs: https://groww.in/p/openapi
 
 1. Sign in to **https://ant.aliceblueonline.com/api** with your AliceBlue trading account.
 2. Generate API credentials. The page shows your **App Code** and **API Secret**.
-3. Paste both into the form → Save → Make Active.
+3. Set the **Redirect URL** in the AliceBlue API portal to the exact value shown at the top of this page.
+4. Enable TOTP-based 2FA on your AliceBlue account (ANT Web → Settings → Security → External 2FA).
+   Save the base32 seed when AliceBlue displays the QR code.
+5. Paste all four pieces — App Code, API Secret, Client ID, Trading Password — and the TOTP seed into the form.
+6. Save → Make Active.
 
-ℹ️ AliceBlue's vendor-API flow exchanges a SHA-256 checksum for a session token. No IP whitelist; no TOTP seed needed for this broker.
+✅ Daemon auto-login: enabled. We log in daily with no human click.
+⚠️ AliceBlue's password is the same one you use on ant.aliceblueonline.com. If you change it there you must update it here too.
 
 Official docs: https://ant.aliceblueonline.com/api (login required)
 """,

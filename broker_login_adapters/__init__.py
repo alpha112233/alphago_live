@@ -26,6 +26,7 @@ Contract:
     }
 """
 
+from .aliceblue import login as aliceblue_login
 from .dhan import login as dhan_login
 from .fyers import login as fyers_login
 from .kotak import login as kotak_login
@@ -38,6 +39,7 @@ ADAPTERS = {
     "zerodha": zerodha_login,
     "dhan": dhan_login,
     "fyers": fyers_login,
+    "aliceblue": aliceblue_login,
 }
 
 # Optional cheap pre-save validators. Each returns {ok, error}. Used by
