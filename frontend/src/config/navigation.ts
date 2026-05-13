@@ -13,7 +13,6 @@ import {
   Gauge,
   Inbox,
   Key,
-  Layers,
   LayoutDashboard,
   type LucideIcon,
   MessageSquare,
@@ -22,7 +21,6 @@ import {
   TrendingUp,
   User,
   Workflow,
-  Wrench,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -32,16 +30,16 @@ export interface NavItem {
 }
 
 // Main navigation items shown in desktop navbar
+// alphago_live fork: Platforms + Tools removed from menu (routes still
+// accessible by direct URL, just hidden from the navbar).
 export const navItems: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/orderbook', label: 'Orderbook', icon: ClipboardList },
   { href: '/tradebook', label: 'Tradebook', icon: FileText },
   { href: '/positions', label: 'Positions', icon: TrendingUp },
   { href: '/action-center', label: 'Action Center', icon: Bell },
-  { href: '/platforms', label: 'Platforms', icon: Layers },
   { href: '/strategy', label: 'Strategy', icon: Code2 },
   { href: '/logs', label: 'Logs', icon: FileBarChart },
-  { href: '/tools', label: 'Tools', icon: Wrench },
 ]
 
 // Items shown in mobile bottom navigation
