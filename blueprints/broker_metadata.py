@@ -162,14 +162,16 @@ Official docs: https://kite.trade/docs/connect/v3/
      ```
      {{REDIRECT_URL}}
      ```
-   - **Whitelisted IPs:** add this customer's whitelisted IP (we'll show it in the next step) — Upstox enforces per-app IP whitelist.
-4. Save. The app detail page shows your **API Key** and **API Secret**.
-5. Paste them in the form here. **Strongly recommended:** also fill in your **Mobile Number** (the one registered with Upstox), **Password**, and **TOTP Seed** — this enables full daily auto-login.
+   - **Whitelisted IPs:** paste the **dedicated IPv6** shown at the top of this page (under "Your dedicated IPv6 address"). This is **mandatory** — Upstox refuses API calls from any non-whitelisted IP, and the error it returns is misleadingly "This version is outdated" (code 1017072), not "IP not whitelisted." If you skip this step, Auto Login will fail with that exact message.
+4. Save the Upstox app. The detail page shows your **API Key** and **API Secret**.
+5. Back here, paste them in the form. Also fill in your **Mobile Number** (the one registered with Upstox), **Password**, and **TOTP Seed** — these enable daily hands-free auto-login.
 6. Save → Make Active.
 
-ℹ️ **TOTP seed for auto-login.** Upstox's OAuth issues a daily code that we exchange for an access_token. With your TOTP seed + mobile + password, we drive the login form via `pyotp` + `curl_cffi` (this is the same pattern alpha_live uses — `scripts/refresh_upstox_token_via_totp.py`). Find the seed at **Upstox app → Profile → Security → 2FA → "Can't scan?"** which shows the base32 secret.
+ℹ️ **Finding the TOTP seed.** Upstox's OAuth issues a daily token. With your TOTP seed + mobile + password, we drive the login form via `pyotp` + `curl_cffi` and mint the token every morning before market open. The seed lives at **Upstox app → Profile → Security → 2FA → "Can't scan?"** — copy the base32 string it reveals.
 
-Token expiry is daily at **03:30 IST**. Without TOTP seed: you click Connect each morning.
+⚠️ **Why IP whitelisting matters more for Upstox than other brokers.** Upstox enforces it at the edge: a non-whitelisted request never reaches the OTP/TOTP layer and just returns "outdated app." If you ever see that error after Auto Login, the fix is *always* to verify the IPv6 above is on the Upstox app's allow list — not to retry, not to rotate the password.
+
+Token expiry is daily at **03:30 IST**. Without TOTP seed: you can still use Connect to log in manually each morning.
 
 Official docs: https://upstox.com/developer/api-documentation/open-api
 """,

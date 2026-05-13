@@ -94,6 +94,11 @@ def precheck(creds: dict) -> dict:
         return _ok("")
 
     sess = CffiSession(impersonate="chrome131")
+    # Match login()'s egress IP — precheck would otherwise hit Upstox from
+    # the container default IP and trip the same not-whitelisted rejection
+    # the real login fights.
+    from ._curl_cffi_bind import bind_to_client_ipv6
+    bind_to_client_ipv6(sess)
     try:
         resp = sess.get(
             AUTH_DIALOG_URL,
@@ -124,40 +129,13 @@ def precheck(creds: dict) -> dict:
     return _ok("")
 
 
-_VERSION_VARIANTS = [
-    # (appVersion, userAgent_suffix, include_x_device_details)
-    # Tried in order until one succeeds or all fail. Upstox sometimes
-    # rejects a particular (sourceIP × appVersion) combination with
-    # error 1017072; bumping the claimed version often clears it.
-    ("4.0.0", "Upstox 3.0", True),     # alpha_live's known-working values
-    ("8.0.0", "Upstox 8.0", True),     # bumped, in case Upstox raised the floor
-    ("", "", False),                    # last resort: drop x-device-details entirely
-]
-
-
 def login(creds: dict) -> dict:
     """Drive the Upstox daily 2FA flow + token exchange.
 
-    Wraps the actual flow in a retry loop over header-version variants
-    so we can recover from Upstox's intermittent error 1017072 ("This
-    version is outdated") without manual intervention. See
-    `_VERSION_VARIANTS` for the fallback order.
+    The headers mirror alpha_live's _http_login exactly (appVersion=4.0.0,
+    userAgent=Upstox 3.0) — these are values Upstox is known to accept.
     """
-    last = None
-    for app_version, ua_suffix, include_xdd in _VERSION_VARIANTS:
-        last = _run_login_flow(creds, app_version, ua_suffix, include_xdd)
-        if last.get("ok"):
-            return last
-        # Only retry if the failure was specifically the version check.
-        # Other failures (wrong TOTP, missing creds, redirect_uri mismatch)
-        # won't be fixed by trying a different version.
-        if "1017072" not in (last.get("error") or "") and "outdated" not in (last.get("error") or "").lower():
-            return last
-        logger.warning(
-            f"Upstox: variant (appVersion={app_version!r}, ua_suffix={ua_suffix!r}, "
-            f"include_xdd={include_xdd}) hit 1017072 — trying next variant"
-        )
-    return last or _fail("all version variants failed")
+    return _run_login_flow(creds, "4.0.0", "Upstox 3.0", True)
 
 
 def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_device_details: bool) -> dict:
@@ -214,6 +192,16 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
 
     sess = CffiSession(impersonate="chrome131")
     sess.headers.update(headers)
+
+    # Bind the outbound socket to the customer's dedicated IPv6. curl_cffi
+    # doesn't go through urllib3, so utils/source_bind's monkeypatch is a
+    # no-op for it — without this we'd egress from the container's default
+    # IP (typically the unrouted Hostinger /48), which is almost certainly
+    # NOT on Upstox's whitelist. Without the bind, Upstox returns error
+    # 1017072 ("outdated version") that's actually an IP-not-whitelisted
+    # signal — confirmed via ipify-egress check on 2026-05-13.
+    from ._curl_cffi_bind import bind_to_client_ipv6, get_client_ipv6
+    bound_ipv6 = bind_to_client_ipv6(sess)
 
     # Step 1: Initiate OAuth dialog. Whitelisted IPs get a 302 with user_id in
     # the redirect URL query string; non-whitelisted IPs get a generic login
@@ -273,16 +261,22 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     validate_token = otp_data.get("data", {}).get("validateOTPToken")
     is_totp_enabled = otp_data.get("data", {}).get("isTotpEnabled")
     if not validate_token:
-        # Detect the "outdated app version" check Upstox started enforcing
-        # 2026-05-13 (error code 1017072). The fix is to bump the
-        # appVersion + userAgent claims in the headers block above.
         err = otp_data.get("error") if isinstance(otp_data, dict) else None
+        # Upstox returns 1017072 "This version is outdated" as the catch-all
+        # when its edge can't match the source IP against the developer
+        # app's IP whitelist. Header tweaks won't fix it — verified
+        # 2026-05-13 by binding curl_cffi to multiple appVersions and
+        # the response was identical regardless of headers.
         if isinstance(err, dict) and err.get("code") == 1017072:
+            client_ipv6 = get_client_ipv6() or "(not set — this Alpha Live instance is misconfigured; contact support)"
             return _fail(
-                "Upstox is rejecting our request as an outdated app version. "
-                "This is a header-version bump on Upstox's side — we need to "
-                "update the appVersion strings in broker_login_adapters/upstox.py. "
-                f"Upstox response: {err.get('message')}"
+                f"Upstox rejected this request as 'outdated app' (code 1017072). "
+                f"In practice this almost always means your dedicated IPv6 is NOT "
+                f"on the Upstox developer app's IP whitelist. "
+                f"Fix: open https://account.upstox.com/developer/apps, edit your "
+                f"app, and add this exact IP to the whitelist: {client_ipv6}. "
+                f"After saving on Upstox's side, retry Auto Login here. "
+                f"(Upstox's literal response was: {err.get('message')!r})"
             )
         return _fail(f"step2 OTP generate: no validateOTPToken in response: {otp_data}")
     if is_totp_enabled is False:

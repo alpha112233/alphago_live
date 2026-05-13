@@ -95,6 +95,13 @@ def login(creds: dict) -> dict:
     # this as strictly as Upstox, but using it avoids any TLS-fingerprint
     # surprises down the line.
     sess = CffiSession(impersonate="chrome131")
+    # Bind to CLIENT_IPV6 — utils/source_bind only patches urllib3, so
+    # curl_cffi otherwise egresses via the container default IP. Zerodha
+    # doesn't enforce IP whitelisting per app, but binding here keeps the
+    # outbound consistent with what the customer added to other brokers'
+    # whitelists (and what Zerodha's audit log will show).
+    from ._curl_cffi_bind import bind_to_client_ipv6
+    bind_to_client_ipv6(sess)
     sess.headers.update({
         "user-agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
