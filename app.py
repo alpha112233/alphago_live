@@ -40,6 +40,7 @@ from blueprints.brlogin import brlogin_bp
 from blueprints.broker_credentials import (
     broker_credentials_bp,  # Import the broker credentials blueprint
 )
+from blueprints.distribution import distribution_bp  # alphago_live fork — webhook fan-out inbox
 from blueprints.chartink import chartink_bp  # Import the chartink blueprint
 from blueprints.strategy_portfolio import strategy_portfolio_bp  # Strategy Builder portfolio
 from blueprints.core import core_bp
@@ -105,6 +106,7 @@ from database.telegram_db import get_bot_config
 from database.traffic_db import init_logs_db as ensure_traffic_logs_exists
 from database.user_db import init_db as ensure_user_tables_exists
 from database.broker_creds_db import init_db as ensure_broker_creds_tables_exists  # alphago_live fork
+from database.distribution_db import init_db as ensure_distribution_tables_exists  # alphago_live fork
 from extensions import socketio  # Import SocketIO
 from limiter import limiter  # Import the Limiter instance
 from restx_api import api, api_v1_bp
@@ -248,6 +250,7 @@ def create_app():
     app.register_blueprint(gc_json_bp)
     app.register_blueprint(platforms_bp)
     app.register_blueprint(brlogin_bp)
+    app.register_blueprint(distribution_bp)  # alphago_live fork
     app.register_blueprint(core_bp)
     app.register_blueprint(analyzer_bp)
     app.register_blueprint(settings_bp)
@@ -514,6 +517,7 @@ def setup_environment(app):
                 ("Auth DB", ensure_auth_tables_exists),
                 ("User DB", ensure_user_tables_exists),
                 ("Broker Creds DB", ensure_broker_creds_tables_exists),  # alphago_live fork
+                ("Distribution DB", ensure_distribution_tables_exists),  # alphago_live fork
                 ("Master Contract DB", ensure_master_contract_tables_exists),
                 ("API Log DB", ensure_api_log_tables_exists),
                 ("Analyzer DB", ensure_analyzer_tables_exists),

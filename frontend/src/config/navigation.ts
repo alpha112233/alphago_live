@@ -11,6 +11,7 @@ import {
   FileText,
   FlaskConical,
   Gauge,
+  Inbox,
   Key,
   Layers,
   LayoutDashboard,
@@ -62,6 +63,7 @@ export const mobileSheetItems = navItems.filter((item) => !bottomNavPaths.includ
 export const profileMenuItems: NavItem[] = [
   { href: '/profile', label: 'Profile', icon: User },
   { href: '/manage-brokers', label: 'Brokers', icon: Briefcase },  // alphago_live fork
+  { href: '/distribution-inbox', label: 'Distribution Inbox', icon: Inbox },  // alphago_live fork
   { href: '/apikey', label: 'API Key', icon: Key },
   { href: '/master-contract', label: 'Master Contract', icon: FileStack },
   { href: '/telegram', label: 'Telegram Bot', icon: MessageSquare },

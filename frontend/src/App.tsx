@@ -36,6 +36,7 @@ const Search = lazy(() => import('@/pages/Search'))
 const ApiKey = lazy(() => import('@/pages/ApiKey'))
 const Profile = lazy(() => import('@/pages/Profile'))
 const BrokerManager = lazy(() => import('@/pages/BrokerManager'))  // alphago_live fork
+const DistributionInbox = lazy(() => import('@/pages/DistributionInbox'))  // alphago_live fork
 const MasterContract = lazy(() => import('@/pages/MasterContract'))
 const ActionCenter = lazy(() => import('@/pages/ActionCenter'))
 
@@ -164,6 +165,7 @@ function App() {
               {/* alphago_live fork: outside the Layout group so it works before
                   broker OAuth (the very thing it lets the user set up). */}
               <Route path="/manage-brokers" element={<BrokerManager />} />
+              <Route path="/distribution-inbox" element={<DistributionInbox />} />
               <Route path="/broker/:broker/totp" element={<BrokerTOTP />} />
               <Route path="/broker/samco/auth" element={<SamcoAuth />} />
               {/* Dynamic broker TOTP routes for all supported brokers */}
