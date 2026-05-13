@@ -155,23 +155,23 @@ Official docs: https://kite.trade/docs/connect/v3/
 **Cost:** Free.
 
 1. Go to **https://account.upstox.com/developer/apps** and sign in.
-2. **New App** → choose **Live API**.
+2. **New App** → choose **Algo Trading** (or Live API).
 3. Fill the form:
    - **App name:** anything.
    - **Redirect URI:** paste:
      ```
      {{REDIRECT_URL}}
      ```
-   - **Whitelisted IPs:** paste the **dedicated IPv6** shown at the top of this page (under "Your dedicated IPv6 address"). This is **mandatory** — Upstox refuses API calls from any non-whitelisted IP, and the error it returns is misleadingly "This version is outdated" (code 1017072), not "IP not whitelisted." If you skip this step, Auto Login will fail with that exact message.
+   - **Static IPs** (separate dialog on the app's detail page): add your dedicated IPv6 shown at the top of this page. This whitelist gates the **order/quote API** (place, modify, cancel orders); the login flow uses a different IP-reputation check on Upstox's edge.
 4. Save the Upstox app. The detail page shows your **API Key** and **API Secret**.
-5. Back here, paste them in the form. Also fill in your **Mobile Number** (the one registered with Upstox), **Password**, and **TOTP Seed** — these enable daily hands-free auto-login.
+5. Back here, paste them in the form. Also fill in your **Mobile Number** (10-digit Indian number, NO country code — `7349290444`, not `+917349290444`), **Password**, and **TOTP Seed**.
 6. Save → Make Active.
 
-ℹ️ **Finding the TOTP seed.** Upstox's OAuth issues a daily token. With your TOTP seed + mobile + password, we drive the login form via `pyotp` + `curl_cffi` and mint the token every morning before market open. The seed lives at **Upstox app → Profile → Security → 2FA → "Can't scan?"** — copy the base32 string it reveals.
+⚠️ **Known limitation: Upstox auto-login may fail with "1017072 outdated app" on first deploy.** Upstox's edge gates the login endpoint with Cloudflare bot-management on IP reputation. New hosting deployments often start on IPv6 ranges Cloudflare flags as low-reputation, and the request is rejected with the misleading "outdated app" message before it ever reaches Upstox's actual handler. **Workaround:** click **Connect** instead — that drives the OAuth flow through your own browser (whose IP IS trusted), and the resulting access token is stored exactly as if Auto Login had worked. Auto Login will then handle subsequent days. We're working on a dedicated SSH-relay path so Auto Login works from day one.
 
-⚠️ **Why IP whitelisting matters more for Upstox than other brokers.** Upstox enforces it at the edge: a non-whitelisted request never reaches the OTP/TOTP layer and just returns "outdated app." If you ever see that error after Auto Login, the fix is *always* to verify the IPv6 above is on the Upstox app's allow list — not to retry, not to rotate the password.
+ℹ️ **Finding the TOTP seed.** The seed lives at **Upstox app → Profile → Security → 2FA → "Can't scan?"** — copy the base32 string it reveals.
 
-Token expiry is daily at **03:30 IST**. Without TOTP seed: you can still use Connect to log in manually each morning.
+Token expiry is daily at **03:30 IST**.
 
 Official docs: https://upstox.com/developer/api-documentation/open-api
 """,

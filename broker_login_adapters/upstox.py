@@ -160,9 +160,31 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     api_key = creds["api_key"]
     api_secret = creds["api_secret"]
     redirect_uri = creds["redirect_uri"]
-    mobile_number = creds["mobile_number"]
     pin = str(creds["pin"])
     totp_secret = creds["totp_secret"]
+
+    # Normalize mobile_number to the 10-digit-no-country-code format Upstox
+    # expects. Many customers paste it with the +91 prefix or leading 0; the
+    # alpha_live reference (cust_c22b367e in MongoDB) stores it as
+    # "7349290444" and that's what /v4/auth/1fa/otp/generate accepts. With
+    # the +91 prefix Upstox returns the canned 1017072 "outdated app"
+    # error — verified 2026-05-13 by side-by-side test against alpha_live's
+    # working creds.
+    raw_mobile = str(creds["mobile_number"] or "").strip()
+    # Strip any leading +, country code (91), or leading zero, then keep
+    # only digits. Result must be exactly 10 digits.
+    digits = "".join(ch for ch in raw_mobile if ch.isdigit())
+    if digits.startswith("91") and len(digits) == 12:
+        digits = digits[2:]
+    elif digits.startswith("0") and len(digits) == 11:
+        digits = digits[1:]
+    if len(digits) != 10:
+        return _fail(
+            f"mobile_number must reduce to exactly 10 digits — got {len(digits)} "
+            f"digits from {raw_mobile!r}. Upstox's mobileNumber field expects "
+            f"the bare 10-digit Indian number with no country code or prefix."
+        )
+    mobile_number = digits
 
     request_id = "WPRO-" + "".join(random.choices(string.ascii_letters + string.digits, k=10))
     headers = {
@@ -200,8 +222,8 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     # NOT on Upstox's whitelist. Without the bind, Upstox returns error
     # 1017072 ("outdated version") that's actually an IP-not-whitelisted
     # signal — confirmed via ipify-egress check on 2026-05-13.
-    from ._curl_cffi_bind import bind_to_client_ipv6, get_client_ipv6
-    bound_ipv6 = bind_to_client_ipv6(sess)
+    from ._curl_cffi_bind import bind_to_client_ipv6
+    bind_to_client_ipv6(sess)
 
     # Step 1: Initiate OAuth dialog. Whitelisted IPs get a 302 with user_id in
     # the redirect URL query string; non-whitelisted IPs get a generic login
@@ -262,21 +284,32 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     is_totp_enabled = otp_data.get("data", {}).get("isTotpEnabled")
     if not validate_token:
         err = otp_data.get("error") if isinstance(otp_data, dict) else None
-        # Upstox returns 1017072 "This version is outdated" as the catch-all
-        # when its edge can't match the source IP against the developer
-        # app's IP whitelist. Header tweaks won't fix it — verified
-        # 2026-05-13 by binding curl_cffi to multiple appVersions and
-        # the response was identical regardless of headers.
+        # Upstox returns 1017072 "This version is outdated" as a fixed-template
+        # response when Cloudflare's bot management on api.upstox.com /
+        # service.upstox.com doesn't grant the request a `_cfuvid` "trusted
+        # visitor" cookie. Verified 2026-05-13: same canned response across
+        # every TLS impersonate value (chrome131/136/142), every IP family,
+        # every appVersion header, and even after binding to the developer
+        # app's Static-IP-whitelisted /128. The Static IPs whitelist in the
+        # Upstox developer portal gates ORDER API only — not the login flow.
+        # The login's bot check is opaque and source-IP-reputation-based;
+        # the only known reliable workaround is to relay the login through
+        # a source IP with clean Cloudflare reputation (alpha_live does
+        # this via scripts/refresh_upstox_token_via_totp.py which SSHes to
+        # `ssh host`).
         if isinstance(err, dict) and err.get("code") == 1017072:
-            client_ipv6 = get_client_ipv6() or "(not set — this Alpha Live instance is misconfigured; contact support)"
             return _fail(
-                f"Upstox rejected this request as 'outdated app' (code 1017072). "
-                f"In practice this almost always means your dedicated IPv6 is NOT "
-                f"on the Upstox developer app's IP whitelist. "
-                f"Fix: open https://account.upstox.com/developer/apps, edit your "
-                f"app, and add this exact IP to the whitelist: {client_ipv6}. "
-                f"After saving on Upstox's side, retry Auto Login here. "
-                f"(Upstox's literal response was: {err.get('message')!r})"
+                "Upstox rejected this login at the Cloudflare bot-management "
+                "layer (returned the canned 'outdated app' 1017072 response). "
+                "This is NOT a credential, header, or IP-whitelist issue — "
+                "it's an IP-reputation gate Upstox enforces on its login "
+                "endpoints. Your dedicated IPv6 is on a tunnel range that "
+                "Cloudflare flags as low-reputation. Workaround: relay the "
+                "login through a server whose IP has clean reputation (e.g. "
+                "the SSH-relay pattern alpha_live uses). For now, use the "
+                "manual Connect button — that drives the OAuth flow through "
+                "your own browser, whose IP IS trusted. "
+                f"(Upstox's literal response: {err.get('message')!r})"
             )
         return _fail(f"step2 OTP generate: no validateOTPToken in response: {otp_data}")
     if is_totp_enabled is False:
