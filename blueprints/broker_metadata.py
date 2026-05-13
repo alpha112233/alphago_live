@@ -85,9 +85,13 @@ BROKER_FIELDS: dict[str, list[dict]] = {
     ],
     "iifl": [_TEXT_KEY, _TEXT_SECRET],
     "iiflcapital": [_TEXT_KEY, _TEXT_SECRET],  # no TOTP seed — see iiflcapital instructions block: daemon login isn't possible, browser OAuth only
-    "groww": [_TEXT_KEY, _TEXT_SECRET,
-        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
-         "help": "Groww's checksum auth doesn't strictly need this — the api_key+api_secret+timestamp checksum is enough. Leave blank unless your account enforces 2FA on API calls."}],
+    "groww": [_TEXT_KEY,
+        {"name": "api_secret", "label": "API Secret (approval mode, optional)",
+         "type": "password", "required": False,
+         "help": "Only needed if you'll paste a fresh approval daily via the Connect button. Daemon auto-login uses the TOTP seed below instead — leave this blank if you want hands-free."},
+        {"name": "totp_seed", "label": "TOTP Seed (Base32, required for auto-login)",
+         "type": "password", "required": False,
+         "help": "From Groww's 'Generate TOTP token' dialog at groww.in/trade-api/api-keys, copy the Base32 secret shown BELOW the QR code — NOT the JWT-style 'TOTP Token' at the top. Required for hands-free daily refresh."}],
     "aliceblue": [
         {"name": "api_key", "label": "App Code", "type": "text", "required": True,
          "help": "Issued in the AliceBlue API portal as 'appcode'."},
@@ -269,12 +273,20 @@ Official docs: https://api.iiflcapital.com/docs
 **Cost:** ₹499 + tax/month.
 
 1. Open **https://groww.in/trade-api** and request developer access from your trading account.
-2. After approval (1-2 days), the developer page shows your **API Key** and **API Secret**.
-3. Paste both → Save → Make Active.
+2. After approval (1-2 days), open **https://groww.in/trade-api/api-keys** → click **"Generate TOTP token"**.
+3. The dialog shows two things — copy the right one:
+   - **API Key** — at the top of the dialog. Paste into the *API Key* field.
+   - **Base32 TOTP secret** — shown BELOW the QR code, looks like
+     `JBSWY3DPEHPK3PXP...`. Paste into the *TOTP Seed* field.
+   - ⚠️ DO **NOT** copy the long JWT-style "TOTP Token" shown above the QR — that
+     is a single-use 6-digit code in disguise, not a seed. Pasting it will fail
+     with "TOTP seed is too short / non-Base32 characters."
+4. Save → Make Active.
 
-✅ Cleanest automation — Groww's checksum auth uses `SHA256(api_key + timestamp + api_secret)` only, no browser login ever. The TOTP field is optional and only needed if you enabled 2FA on API calls separately.
+✅ Daemon auto-login: enabled. We mint a fresh access_token daily via `key_type=totp` against `api.groww.in/v1/token/api/access`. No browser, no daily clicks.
+⚠️ Groww enforces a static-IP whitelist per API Key. Your dedicated IPv6 (shown at the top of this page) must be added to the API Key's allow-list when you create it.
 
-Official docs: https://groww.in/p/openapi
+Official docs: https://groww.in/trade-api/docs/curl
 """,
     "aliceblue": """\
 ### Connect Alice Blue (Ant)
