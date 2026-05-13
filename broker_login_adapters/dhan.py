@@ -75,41 +75,33 @@ def login(creds: dict) -> dict:
     except ImportError:
         return _fail("requests is required (base dep)")
 
-    # Parse api_key — stored as "<dhanClientId>:::<apiKey>" per
-    # broker_metadata.py. The client_id prefix is what we need; the
-    # apiKey suffix is for downstream trading API calls.
+    # Dhan Client ID source: prefer the dedicated client_code field (what
+    # the form now collects); fall back to parsing the legacy "<id>:::<key>"
+    # joined api_key for customers who saved before the form refactor.
+    # `user_id` is the broker_credentials.py alias for client_code.
+    dhan_client_id = (creds.get("user_id") or "").strip()
     api_key_raw = (creds.get("api_key") or "").strip()
-    if ":::" not in api_key_raw:
-        # Common mistake: customer pasted only the API Key (the hex string
-        # Dhan shows after "Generate API Credentials") or only the Client ID.
-        # Both forms fail at /generateAccessToken with an opaque "Unauthorized
-        # Request" message, which doesn't help the customer find the bug.
-        # Detect it here and tell them exactly what to do.
-        masked = (api_key_raw[:4] + "…" + api_key_raw[-2:]) if len(api_key_raw) >= 6 else api_key_raw
+
+    if not dhan_client_id and ":::" in api_key_raw:
+        dhan_client_id, _api_key_suffix = api_key_raw.split(":::", 1)
+        dhan_client_id = dhan_client_id.strip()
+
+    if not dhan_client_id:
         return _fail(
-            f"Dhan needs the 'Client ID:::API Key' field in the format "
-            f"<numeric Client ID>:::<API Key>, joined by three colons. "
-            f"You saved just {masked!r} (no ':::'). Click Edit on the Dhan "
-            f"broker and paste both pieces — e.g. '1100000123:::abcd1234'. "
-            f"The Client ID is the 10-12 digit number you log in with at "
-            f"web.dhan.co; the API Key is the hex string from "
-            f"My Profile → DhanHQ Trading APIs."
+            "Dhan Client ID is missing. Click Edit on the Dhan broker and "
+            "paste your 10-12 digit Dhan Client ID (the number you log in "
+            "with at web.dhan.co) into the 'Dhan Client ID' field."
         )
 
-    dhan_client_id, _api_key_suffix = api_key_raw.split(":::", 1)
-    dhan_client_id = dhan_client_id.strip()
-
-    # Dhan client IDs are numeric (10-12 digits). If we got a non-numeric
-    # string before the ':::' the customer likely pasted them in the wrong
-    # order. Catch it explicitly — generateAccessToken would otherwise
-    # return "Unauthorized Request" with no hint as to why.
+    # Dhan client IDs are numeric. If non-numeric, the customer likely
+    # pasted the API Key into the Client ID slot — generateAccessToken
+    # would return "Unauthorized Request" with no hint as to why.
     if not dhan_client_id.isdigit():
         return _fail(
-            f"Dhan Client ID must be numeric (10-12 digits, like '1100000123'). "
-            f"The value before ':::' in your API Key field is {dhan_client_id!r}, "
-            f"which isn't numeric — looks like the Client ID and API Key are "
-            f"swapped. Edit the Dhan broker and put them in this order: "
-            f"<numeric Client ID>:::<hex API Key>."
+            f"Dhan Client ID must be numeric (10-12 digits, like "
+            f"'1100000123'). You entered {dhan_client_id!r}, which isn't "
+            f"numeric — looks like the API Key was pasted into the Client "
+            f"ID slot. Edit the Dhan broker and double-check both fields."
         )
 
     pin = str(creds.get("pin") or "").strip()

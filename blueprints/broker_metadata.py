@@ -51,9 +51,12 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
          "help": "Enables daily auto-login. From Upstox app → Profile → Security → 2FA → 'Can't scan?' shows the seed."}],
     "dhan": [
-        {"name": "api_key", "label": "Client ID:::API Key (joined by ':::')",
+        {"name": "client_code", "label": "Dhan Client ID",
          "type": "text", "required": True,
-         "help": "Combine your Dhan Client ID and API Key with three colons. Example: 1100000123:::abcd1234"},
+         "help": "The 10-12 digit numeric ID you use to log in at web.dhan.co (e.g., 1100000123). Same value Dhan calls 'Client ID' in API Key mode."},
+        {"name": "api_key", "label": "API Key",
+         "type": "text", "required": True,
+         "help": "The hex 'API Key' shown in Dhan's developer console. ⚠️ Make sure the toggle in the top-right is on 'API Key' — Dhan defaults to 'Access Token' mode."},
         _TEXT_SECRET,
         {"name": "extra.pin", "label": "Trading PIN (4-digit web/app PIN)",
          "type": "password", "required": False,
@@ -182,16 +185,22 @@ Official docs: https://upstox.com/developer/api-documentation/open-api
 
 1. Log in to **https://web.dhan.co**.
 2. Open **My Profile → Access DhanHQ APIs** (also called "DhanHQ Trading APIs").
-3. Click **Generate API Credentials**. The page shows your **Client ID**, **API Key**, and **API Secret**.
-4. Enable **TOTP** on your account if not already (Profile → Security → 2FA). Save the base32 seed shown during setup.
-5. Under **API Settings** → **Allowed IPs**, add this customer's whitelisted IP (we'll show it on the next screen). **Mandatory from Jan 2026** for order placement.
-6. Paste into the form here:
-   - **API Key field:** `<your Client ID>:::<your API Key>` (joined with `:::`).
-   - **API Secret:** your API Secret.
-   - **TOTP Seed:** the base32 seed from step 4.
-7. Save → Make Active.
+3. **⚠️ Toggle the top-right switch from "Access Token" to "API Key" mode.** Dhan defaults to Access Token (long-lived static token), but for daemon auto-login we need API Key mode. The toggle is on the same row as the **API Secret** column header.
+4. In API Key mode, click **Generate** to create credentials if you don't have any yet. The page then shows three pieces:
+   - **Client ID** — 10-12 digits, the same number you log into web.dhan.co with.
+   - **API Key** — hex string, e.g. `08956b3a`.
+   - **API Secret** — UUID-style, e.g. `09bcbeea-fea1-49c7-8ba7-cc947805bf0f`.
+5. Enable **TOTP** on your account if not already (Profile → Security → 2FA). Save the base32 seed shown during setup.
+6. Under **API Settings → Add IP Setting**, add this customer's whitelisted IPv6 (shown at the top of this page). **Mandatory from Jan 2026** for order placement.
+7. Paste into the form here:
+   - **Dhan Client ID:** the 10-12 digit number from step 4.
+   - **API Key:** the hex string from step 4.
+   - **API Secret:** the UUID from step 4.
+   - **Trading PIN:** your 4-digit web.dhan.co login PIN.
+   - **TOTP Seed:** the base32 seed from step 5.
+8. Save → Make Active.
 
-ℹ️ Token is 24h. With the TOTP seed our backend renews automatically; without it the dashboard will return 401 once a day until you re-enter.
+ℹ️ Access token is 24h. With the TOTP seed our backend renews automatically; without it the dashboard will return 401 once a day until you re-enter.
 
 Official docs: https://dhanhq.co/docs/v2/authentication/
 """,
