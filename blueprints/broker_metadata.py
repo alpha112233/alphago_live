@@ -84,7 +84,7 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "help": "Required — Kotak's daily auth flow uses TOTP, no OAuth redirect."},
     ],
     "iifl": [_TEXT_KEY, _TEXT_SECRET],
-    "iiflcapital": [_TEXT_KEY, _TEXT_SECRET],
+    "iiflcapital": [_TEXT_KEY, _TEXT_SECRET],  # no TOTP seed — see iiflcapital instructions block: daemon login isn't possible, browser OAuth only
     "groww": [_TEXT_KEY, _TEXT_SECRET,
         {"name": "totp_seed", "label": "TOTP Seed (base32, optional)", "type": "password", "required": False,
          "help": "Groww's checksum auth doesn't strictly need this — the api_key+api_secret+timestamp checksum is enough. Leave blank unless your account enforces 2FA on API calls."}],
@@ -234,10 +234,24 @@ Official docs: https://documenter.getpostman.com/view/21534797/UzBnqmpD
      ```
      {{REDIRECT_URL}}
      ```
-   - **Whitelisted IPs:** add this customer's whitelisted IP.
+   - **Whitelisted IPs:** add the IPv6 shown at the top of this page.
 4. Paste both keys → Save → Make Active.
 
-ℹ️ Daily browser auth-code flow; access_token rotates EOD. SHA-256 checksum of `clientId+authCode+secret`.
+⚠️ **Daily browser login required — no daemon auto-login for IIFL.**
+
+Unlike Zerodha / Upstox / Fyers / Kotak / Dhan, IIFL Capital does not
+expose a programmable login API. Their documented flow (official Postman
+collection + BridgePy SDK) starts with the browser-issued auth code and
+treats user authentication as out-of-band. There is no TOTP-based
+headless endpoint we can drive from the daemon.
+
+Practical impact: each morning (or whenever the userSession expires)
+you click **Connect** on the dashboard → log in to IIFL in the browser
+→ IIFL redirects back to us with the auth code → we exchange it for the
+session token → trading works for the rest of the day.
+
+If IIFL ships a programmable login endpoint in future we'll build the
+adapter and surface an Auto-login button here.
 
 Official docs: https://api.iiflcapital.com/docs
 """,
