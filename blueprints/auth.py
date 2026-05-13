@@ -123,6 +123,33 @@ def _try_resume_broker_session(username):
             return None
 
         broker = auth_obj.broker
+
+        # alphago_live multi-broker fix: auth_db tracks "last broker authed"
+        # (legacy single-broker), while broker_creds_db tracks "which broker
+        # the customer wants to use right now". If the customer switched
+        # their active broker (Edit → Make Active) but auth_db still has
+        # the OLD broker's row, resuming that row would force the customer
+        # back through the old broker's OAuth instead of the new one. Skip
+        # the resume entirely when the two disagree — the broker-select
+        # page will then route the customer to the right OAuth.
+        try:
+            from database.user_db import db_session, User
+            from database.broker_creds_db import get_active_broker
+            user = db_session.query(User).filter_by(username=username).first()
+            if user is not None:
+                active_in_creds = get_active_broker(user.id)
+                if active_in_creds and active_in_creds != broker:
+                    logger.info(
+                        f"resume skipped: auth_db has stale '{broker}' session "
+                        f"but broker_creds_db says active broker is "
+                        f"'{active_in_creds}'. Customer will be routed to "
+                        f"{active_in_creds}'s OAuth instead."
+                    )
+                    return None
+        except Exception:
+            # If the cross-check itself fails, don't block the legacy resume
+            # path — keep the prior behaviour.
+            logger.exception("broker_creds_db cross-check failed (continuing legacy resume)")
         feed_token = decrypt_token(auth_obj.feed_token) if auth_obj.feed_token else None
         user_id = auth_obj.user_id
 

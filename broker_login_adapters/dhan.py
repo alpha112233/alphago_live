@@ -79,20 +79,43 @@ def login(creds: dict) -> dict:
     # broker_metadata.py. The client_id prefix is what we need; the
     # apiKey suffix is for downstream trading API calls.
     api_key_raw = (creds.get("api_key") or "").strip()
-    if ":::" in api_key_raw:
-        dhan_client_id, _api_key_suffix = api_key_raw.split(":::", 1)
-        dhan_client_id = dhan_client_id.strip()
-    else:
-        # If the customer saved it as just the client_id (no ::: suffix),
-        # use the whole field as the client_id.
-        dhan_client_id = api_key_raw
+    if ":::" not in api_key_raw:
+        # Common mistake: customer pasted only the API Key (the hex string
+        # Dhan shows after "Generate API Credentials") or only the Client ID.
+        # Both forms fail at /generateAccessToken with an opaque "Unauthorized
+        # Request" message, which doesn't help the customer find the bug.
+        # Detect it here and tell them exactly what to do.
+        masked = (api_key_raw[:4] + "…" + api_key_raw[-2:]) if len(api_key_raw) >= 6 else api_key_raw
+        return _fail(
+            f"Dhan needs the 'Client ID:::API Key' field in the format "
+            f"<numeric Client ID>:::<API Key>, joined by three colons. "
+            f"You saved just {masked!r} (no ':::'). Click Edit on the Dhan "
+            f"broker and paste both pieces — e.g. '1100000123:::abcd1234'. "
+            f"The Client ID is the 10-12 digit number you log in with at "
+            f"web.dhan.co; the API Key is the hex string from "
+            f"My Profile → DhanHQ Trading APIs."
+        )
+
+    dhan_client_id, _api_key_suffix = api_key_raw.split(":::", 1)
+    dhan_client_id = dhan_client_id.strip()
+
+    # Dhan client IDs are numeric (10-12 digits). If we got a non-numeric
+    # string before the ':::' the customer likely pasted them in the wrong
+    # order. Catch it explicitly — generateAccessToken would otherwise
+    # return "Unauthorized Request" with no hint as to why.
+    if not dhan_client_id.isdigit():
+        return _fail(
+            f"Dhan Client ID must be numeric (10-12 digits, like '1100000123'). "
+            f"The value before ':::' in your API Key field is {dhan_client_id!r}, "
+            f"which isn't numeric — looks like the Client ID and API Key are "
+            f"swapped. Edit the Dhan broker and put them in this order: "
+            f"<numeric Client ID>:::<hex API Key>."
+        )
 
     pin = str(creds.get("pin") or "").strip()
     totp_secret = (creds.get("totp_secret") or "").strip()
 
     missing = []
-    if not dhan_client_id:
-        missing.append("dhan_client_id (api_key prefix before ':::')")
     if not pin:
         missing.append("pin (4-digit web/app PIN)")
     if not totp_secret:
