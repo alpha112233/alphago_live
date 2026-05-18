@@ -297,6 +297,17 @@ else
 fi
 
 # ============================================
+# CLOCK DRIFT CHECK
+# ============================================
+# Dhan/Zerodha/Fyers/Kotak/Groww/MotilalOswal use TOTP-based auto-login;
+# drift > 30s makes generated codes fall outside the broker's window →
+# opaque "Invalid TOTP" failures. Surface drift in startup logs so the
+# operator sees it before the first login attempt of the day.
+if [ -f "/app/scripts/check_clock_drift.py" ]; then
+    /app/.venv/bin/python /app/scripts/check_clock_drift.py || true
+fi
+
+# ============================================
 # WEBSOCKET PROXY SERVER
 # ============================================
 echo "[OpenAlgo] Starting WebSocket proxy server on port 8765..."
