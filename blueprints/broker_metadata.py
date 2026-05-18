@@ -121,6 +121,10 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "api_secret", "label": "Long-lived Access Token", "type": "password", "required": True,
          "help": "IndMoney issues a static token via their developer portal — no daily refresh."},
     ],
+    # DefinEdge INTEGRATE: api_token + api_secret at save; OTP entered each
+    # morning via the /broker/definedge/totp page. No TOTP-seed shortcut at
+    # the API auth layer today — the OTP is delivered via email/SMS only.
+    "definedge": [_TEXT_KEY, _TEXT_SECRET],
 }
 
 # Per-broker setup instructions — markdown rendered in the React frontend.
@@ -357,6 +361,23 @@ Official docs: https://flattrade.in/  /  https://api.flattrade.in/docs
 ✅ Simplest setup — paste once, no daily refresh and no TOTP. Auto Login just re-arms the saved token; you only ever re-paste if you rotate the token on IndMoney's console.
 
 Official docs: link from the IndMoney app's Developer screen (no public docs page yet).
+""",
+    "definedge": """\
+### Connect DefinEdge Securities (INTEGRATE)
+
+**Cost:** Free. Available to any DefinEdge trading account holder.
+
+1. Log in to **https://signup.definedgesecurities.com/integrate** (the INTEGRATE developer portal) with your DefinEdge trading credentials.
+2. Go to **My Apps** → **Create App**. Fill the form (name + description; no redirect URL is needed for this OTP-based flow).
+3. Copy the **API Token** (this is your API Key) and **API Secret** shown after app creation. Paste both into the form here.
+4. Save → click **Connect**. DefinEdge sends a one-time OTP to your registered email + mobile. Enter it on the next screen.
+5. The session is valid until midnight IST. Click **Connect** + enter a fresh OTP each trading day.
+
+ℹ️ **No auto-login today**: DefinEdge's API auth requires an email/SMS OTP each morning — there is no TOTP-seed shortcut at the API layer. Auto-login support is on the roadmap and will be added when DefinEdge exposes a TOTP-based programmatic path.
+
+ℹ️ Native GTT + OCO supported (`/gttplaceorder`, `/ocoplaceorder`).
+
+Official docs: https://signup.definedgesecurities.com/trading-api-docs
 """,
 }
 

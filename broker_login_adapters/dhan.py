@@ -63,8 +63,30 @@ def _fail(error: str, **extra: Any) -> dict:
     return {"ok": False, "access_token": None, "error": error, **extra}
 
 
+def _normalize_seed(raw: str) -> str:
+    """Strip spaces/hyphens and uppercase. Most authenticator UIs display
+    base32 seeds with separators for readability (e.g. "JBSW Y3DP EHPK")
+    which pyotp's b32decode rejects with `Non-base32 digit found`."""
+    return raw.replace(" ", "").replace("-", "").upper()
+
+
+def _is_invalid_totp_body(body: Any) -> bool:
+    """Dhan returns either 200 with `{message: 'Invalid TOTP', status: 'error'}`
+    or sometimes a non-200 with the same message. Detect either shape."""
+    if not isinstance(body, dict):
+        return False
+    msg = (body.get("message") or body.get("errorMessage") or "").lower()
+    return "invalid totp" in msg or "totp" in msg and body.get("status") == "error"
+
+
 def login(creds: dict) -> dict:
-    """Run Dhan's single-call TOTP login and return the 24h JWT."""
+    """Run Dhan's single-call TOTP login and return the 24h JWT.
+
+    On 'Invalid TOTP' rejection, retry once at t-30 and once at t+30 to
+    absorb clock skew (NTP drift or container clock lag). If all three
+    windows fail with a TOTP error, the seed itself is wrong or rotated —
+    surface a diagnostic error pointing the user at the right fix.
+    """
     try:
         import pyotp
     except ImportError:
@@ -105,7 +127,8 @@ def login(creds: dict) -> dict:
         )
 
     pin = str(creds.get("pin") or "").strip()
-    totp_secret = (creds.get("totp_secret") or "").strip()
+    totp_secret_raw = (creds.get("totp_secret") or "").strip()
+    totp_secret = _normalize_seed(totp_secret_raw)
 
     missing = []
     if not pin:
@@ -115,44 +138,86 @@ def login(creds: dict) -> dict:
     if missing:
         return _fail(f"missing required Dhan credentials: {missing}")
 
-    # Generate the TOTP, waiting briefly if the current 30s window has
-    # less than 5s left so the code doesn't age out in flight.
+    # Wait briefly if the current 30s TOTP window has < 5s left, so the
+    # code doesn't age out in flight on the first attempt.
     remaining = 30 - (int(time.time()) % 30)
     if remaining < 5:
         time.sleep(remaining + 1)
-    totp_code = pyotp.TOTP(totp_secret).now()
 
-    try:
-        r = requests.post(
-            _GENERATE_ACCESS_TOKEN_URL,
-            params={
-                "dhanClientId": dhan_client_id,
-                "pin": pin,
-                "totp": totp_code,
-            },
-            timeout=15,
-        )
-    except Exception as e:
-        return _fail(f"generateAccessToken: network error: {e}")
+    totp = pyotp.TOTP(totp_secret)
+    now = int(time.time())
+    last_body: Any = None
 
-    # Surface Dhan's exact error if non-200 — they return JSON with a
-    # readable message field, so don't bury it.
-    try:
-        body = r.json()
-    except Exception:
-        return _fail(f"generateAccessToken: HTTP {r.status_code} non-JSON: {r.text[:200]}")
+    # Try current, then -30s, then +30s — absorbs clock skew up to ±30s.
+    for offset in (0, -30, 30):
+        try:
+            totp_code = totp.at(now + offset)
+        except Exception as e:
+            # Only happens if the seed itself is malformed (e.g., contains
+            # non-base32 chars after normalization). Should be caught at
+            # save time, but guard here too.
+            return _fail(
+                f"TOTP seed is not valid base32 ({e}). Re-save the seed — "
+                f"copy the base32 string from Dhan's 2FA setup (looks like "
+                f"'JBSWY3DPEHPK3PXP'), not the QR image or any JWT token."
+            )
 
-    if r.status_code != 200:
-        msg = body.get("message") or body.get("errorMessage") or str(body)[:200]
+        try:
+            r = requests.post(
+                _GENERATE_ACCESS_TOKEN_URL,
+                params={
+                    "dhanClientId": dhan_client_id,
+                    "pin": pin,
+                    "totp": totp_code,
+                },
+                timeout=15,
+            )
+        except Exception as e:
+            return _fail(f"generateAccessToken: network error: {e}")
+
+        try:
+            body = r.json()
+        except Exception:
+            return _fail(
+                f"generateAccessToken: HTTP {r.status_code} non-JSON: {r.text[:200]}"
+            )
+        last_body = body
+
+        # Success — Dhan returns 200 with a populated `accessToken`.
+        access_token = body.get("accessToken") if isinstance(body, dict) else None
+        if r.status_code == 200 and access_token:
+            if offset != 0:
+                logger.warning(
+                    "Dhan auto-login succeeded with t_offset=%ds — server "
+                    "clock skew suspected. Recommend NTP sync on this host.",
+                    offset,
+                )
+            return _ok(
+                access_token=access_token,
+                user_id=body.get("dhanClientId") or dhan_client_id,
+                feed_token=None,
+                expires_at=body.get("expiryTime"),
+            )
+
+        # If this is a TOTP rejection, try the next time window.
+        if _is_invalid_totp_body(body):
+            continue
+
+        # Any other error (wrong pin, account locked, IP not whitelisted,
+        # etc.) — fail fast, don't burn the rest of the retry budget.
+        msg = body.get("message") or body.get("errorMessage") or str(body)[:200] \
+            if isinstance(body, dict) else str(body)[:200]
         return _fail(f"generateAccessToken HTTP {r.status_code}: {msg}")
 
-    access_token = body.get("accessToken")
-    if not access_token:
-        return _fail(f"generateAccessToken: no accessToken in body: {body}")
-
-    return _ok(
-        access_token=access_token,
-        user_id=body.get("dhanClientId") or dhan_client_id,
-        feed_token=None,
-        expires_at=body.get("expiryTime"),
+    # All three windows rejected the TOTP — the seed is wrong or rotated.
+    return _fail(
+        "Dhan rejected the TOTP at the current and ±30s windows. Most "
+        "likely causes (in order): "
+        "(a) you re-ran 2FA setup on Dhan after saving the seed here — the "
+        "old seed is now dead, re-save the new one; "
+        "(b) the saved value isn't actually the base32 seed (e.g., you "
+        "pasted a JWT-style 'TOTP token' or the QR image's raw payload); "
+        "(c) the seed belongs to a different Dhan account than client "
+        f"{dhan_client_id}. "
+        f"Last Dhan response: {last_body}"
     )
