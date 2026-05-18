@@ -161,7 +161,12 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     api_secret = creds["api_secret"]
     redirect_uri = creds["redirect_uri"]
     pin = str(creds["pin"])
-    totp_secret = creds["totp_secret"]
+    # Normalize TOTP seed — most authenticator UIs display base32 seeds with
+    # readability separators (e.g. "JBSW Y3DP EHPK 3PXP") which pyotp's
+    # b32decode rejects with `Non-base32 digit found`. Save-time validation
+    # already normalizes, but old saved creds may pre-date that — handle
+    # both. Mirrors the same fix in broker_login_adapters/dhan.py.
+    totp_secret = (creds["totp_secret"] or "").replace(" ", "").replace("-", "").upper()
 
     # Normalize mobile_number to the 10-digit-no-country-code format Upstox
     # expects. Many customers paste it with the +91 prefix or leading 0; the
@@ -319,23 +324,72 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
         )
 
     # Step 3: Verify TOTP. Wait briefly if the current TOTP window is near
-    # expiry so we don't race the verify call.
+    # expiry so we don't race the verify call on the first attempt.
     remaining = 30 - (int(time.time()) % 30)
     if remaining < 5:
         time.sleep(remaining + 1)
-    totp_code = pyotp.TOTP(totp_secret).now()
-    try:
-        resp = sess.post(
-            _TOTP_VERIFY_URL,
-            json={"data": {"otp": totp_code, "validateOtpToken": validate_token}},
-            timeout=15,
-        )
-        verify_data = resp.json()
-    except Exception as e:
-        return _fail(f"step3 TOTP verify: {e}")
 
-    if (not verify_data.get("success", True)) or verify_data.get("status") == "error":
-        return _fail(f"step3 TOTP verify failed (wrong seed?): {verify_data}")
+    # Retry pattern: try current, then -30s, then +30s — absorbs clock skew
+    # up to ±30s. The validateOtpToken from step 2 remains usable for the
+    # full minute window, so resubmitting step 3 with a different TOTP at
+    # different time offsets doesn't require restarting the session.
+    # Mirrors broker_login_adapters/dhan.py — same root causes (rotated
+    # seed, wrong-string-pasted, NTP drift) recur across every TOTP broker.
+    totp_engine = pyotp.TOTP(totp_secret)
+    now = int(time.time())
+    verify_data: dict = {}
+    totp_succeeded = False
+    skew_offset_used = 0
+    for offset in (0, -30, 30):
+        try:
+            totp_code = totp_engine.at(now + offset)
+        except Exception as e:
+            return _fail(
+                f"TOTP seed is not valid base32 ({e}). Re-save the seed — "
+                f"copy the base32 string from Upstox's 2FA setup (looks "
+                f"like 'JBSWY3DPEHPK3PXP'), not the QR image or any JWT."
+            )
+        try:
+            resp = sess.post(
+                _TOTP_VERIFY_URL,
+                json={"data": {"otp": totp_code, "validateOtpToken": validate_token}},
+                timeout=15,
+            )
+            verify_data = resp.json()
+        except Exception as e:
+            return _fail(f"step3 TOTP verify: {e}")
+
+        rejected = (not verify_data.get("success", True)) or verify_data.get("status") == "error"
+        if not rejected:
+            totp_succeeded = True
+            skew_offset_used = offset
+            break
+        # If the rejection is for a non-TOTP reason (account locked, rate
+        # limited, etc.), don't burn the rest of the retry budget. Detect
+        # TOTP-specific rejection by message contents.
+        err_blob = str(verify_data).lower()
+        if "otp" not in err_blob and "invalid" not in err_blob:
+            break
+
+    if not totp_succeeded:
+        return _fail(
+            "Upstox rejected the TOTP at the current and ±30s windows. "
+            "Most likely causes (in order): "
+            "(a) you re-ran 2FA setup on Upstox after saving the seed "
+            "here — the old seed is now dead, re-save the new one at "
+            "https://account.upstox.com/totp; "
+            "(b) the saved value isn't actually the base32 seed (e.g. "
+            "you pasted the QR scan or a JWT token instead of the "
+            "secret string); "
+            "(c) the host clock is more than 30s out of sync with NTP. "
+            f"Last Upstox response: {verify_data}"
+        )
+    if skew_offset_used != 0:
+        logger.warning(
+            "Upstox step 3 TOTP succeeded with t_offset=%ds — host clock "
+            "skew suspected. Run `timedatectl set-ntp true` on the host.",
+            skew_offset_used,
+        )
 
     # Step 4: Submit PIN (2FA). The response sometimes already contains the
     # auth code in a redirectUri — short-circuit if so.
