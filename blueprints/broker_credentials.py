@@ -533,6 +533,32 @@ def save_credentials_endpoint():
                 "message": precheck_result.get("error") or "Pre-save validation failed",
             }), 400
 
+    # Validate TOTP seed at save time — catches paste mistakes (JWT instead
+    # of base32, copied with formatting characters, etc.) before they show
+    # up as opaque "Invalid TOTP" rejections at auto-login. Empty stays as
+    # None so the "leave blank to keep existing" UX (commit 8a26a363) works.
+    raw_totp_seed = (data.get("totp_seed") or "").strip()
+    totp_seed_to_save: str | None = None
+    if raw_totp_seed:
+        normalized = raw_totp_seed.replace(" ", "").replace("-", "").upper()
+        import base64
+        try:
+            pad = "=" * (-len(normalized) % 8)
+            base64.b32decode(normalized + pad, casefold=False)
+        except Exception:
+            return jsonify({
+                "status": "error",
+                "message": (
+                    "TOTP seed is not valid base32. Common mistakes: pasted "
+                    "the JWT-style 'TOTP Token' instead of the base32 seed "
+                    "shown below the QR code; copied trailing whitespace; "
+                    "or used the wrong field. Re-open your broker's 2FA "
+                    "setup screen and copy only the secret string (looks "
+                    "like 'JBSWY3DPEHPK3PXP')."
+                ),
+            }), 400
+        totp_seed_to_save = normalized
+
     try:
         add_or_update_broker_creds(
             user_id=user_id,
@@ -542,7 +568,7 @@ def save_credentials_endpoint():
             api_key_market=(data.get("api_key_market") or "").strip() or None,
             api_secret_market=(data.get("api_secret_market") or "").strip() or None,
             client_code=(data.get("client_code") or "").strip() or None,
-            totp_seed=(data.get("totp_seed") or "").strip() or None,
+            totp_seed=totp_seed_to_save,
             extra=extra_to_save,
             notes=(data.get("notes") or "").strip() or None,
         )
