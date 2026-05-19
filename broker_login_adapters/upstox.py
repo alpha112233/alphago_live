@@ -289,31 +289,12 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     is_totp_enabled = otp_data.get("data", {}).get("isTotpEnabled")
     if not validate_token:
         err = otp_data.get("error") if isinstance(otp_data, dict) else None
-        # Upstox returns 1017072 "This version is outdated" as a fixed-template
-        # response when Cloudflare's bot management on api.upstox.com /
-        # service.upstox.com doesn't grant the request a `_cfuvid` "trusted
-        # visitor" cookie. Verified 2026-05-13: same canned response across
-        # every TLS impersonate value (chrome131/136/142), every IP family,
-        # every appVersion header, and even after binding to the developer
-        # app's Static-IP-whitelisted /128. The Static IPs whitelist in the
-        # Upstox developer portal gates ORDER API only — not the login flow.
-        # The login's bot check is opaque and source-IP-reputation-based;
-        # the only known reliable workaround is to relay the login through
-        # a source IP with clean Cloudflare reputation (alpha_live does
-        # this via scripts/refresh_upstox_token_via_totp.py which SSHes to
-        # `ssh host`).
         if isinstance(err, dict) and err.get("code") == 1017072:
             return _fail(
-                "Upstox rejected this login at the Cloudflare bot-management "
-                "layer (returned the canned 'outdated app' 1017072 response). "
-                "This is NOT a credential, header, or IP-whitelist issue — "
-                "it's an IP-reputation gate Upstox enforces on its login "
-                "endpoints. Your dedicated IPv6 is on a tunnel range that "
-                "Cloudflare flags as low-reputation. Workaround: relay the "
-                "login through a server whose IP has clean reputation (e.g. "
-                "the SSH-relay pattern alpha_live uses). For now, use the "
-                "manual Connect button — that drives the OAuth flow through "
-                "your own browser, whose IP IS trusted. "
+                "Upstox returned error 1017072 'This version is outdated' at "
+                "step 2 (otp/generate). Root cause is under investigation — "
+                "rerun the auto-login once and check the server log for the "
+                "exact source IP used. "
                 f"(Upstox's literal response: {err.get('message')!r})"
             )
         return _fail(f"step2 OTP generate: no validateOTPToken in response: {otp_data}")
