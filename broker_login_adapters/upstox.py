@@ -69,6 +69,17 @@ def _fail(error: str, **extra: Any) -> dict:
     return {"ok": False, "access_token": None, "error": error, **extra}
 
 
+def _login_should_skip_bind() -> bool:
+    """Whether to skip the per-customer IPv6 bind on the Upstox login
+    path. Default True — see the long comment in _run_login_flow about
+    Cloudflare's tunnel-range block. Set UPSTOX_LOGIN_SKIP_BIND=false to
+    fall back to the upstream behavior."""
+    import os
+    return (os.getenv("UPSTOX_LOGIN_SKIP_BIND") or "true").strip().lower() in (
+        "true", "1", "yes", "on",
+    )
+
+
 def precheck(creds: dict) -> dict:
     """Lightweight validation: does the (api_key, redirect_uri) pair match
     what's registered in the customer's Upstox developer app?
@@ -94,11 +105,13 @@ def precheck(creds: dict) -> dict:
         return _ok("")
 
     sess = CffiSession(impersonate="chrome131")
-    # Match login()'s egress IP — precheck would otherwise hit Upstox from
-    # the container default IP and trip the same not-whitelisted rejection
-    # the real login fights.
-    from ._curl_cffi_bind import bind_to_client_ipv6
-    bind_to_client_ipv6(sess)
+    # Match login()'s egress decision — see the long comment at the start
+    # of login() about the Cloudflare bot-mgmt block on Route64 tunnel-range
+    # IPv6. Precheck respects the same UPSTOX_LOGIN_SKIP_BIND env var so it
+    # tests the same path the daemon login will actually take.
+    if not _login_should_skip_bind():
+        from ._curl_cffi_bind import bind_to_client_ipv6
+        bind_to_client_ipv6(sess)
     try:
         resp = sess.get(
             AUTH_DIALOG_URL,
@@ -220,15 +233,30 @@ def _run_login_flow(creds: dict, app_version: str, ua_suffix: str, include_x_dev
     sess = CffiSession(impersonate="chrome131")
     sess.headers.update(headers)
 
-    # Bind the outbound socket to the customer's dedicated IPv6. curl_cffi
-    # doesn't go through urllib3, so utils/source_bind's monkeypatch is a
-    # no-op for it — without this we'd egress from the container's default
-    # IP (typically the unrouted Hostinger /48), which is almost certainly
-    # NOT on Upstox's whitelist. Without the bind, Upstox returns error
-    # 1017072 ("outdated version") that's actually an IP-not-whitelisted
-    # signal — confirmed via ipify-egress check on 2026-05-13.
-    from ._curl_cffi_bind import bind_to_client_ipv6
-    bind_to_client_ipv6(sess)
+    # Egress decision for the Upstox login flow:
+    #
+    # Default: SKIP bind_to_client_ipv6 — let curl_cffi use the container's
+    # default egress (typically tidi's clean shared IPv4 / native IPv6).
+    # The per-customer Route64 /128 IPv6 sits in a tunnel range that
+    # Cloudflare's bot-management flags as low-reputation — every login
+    # attempt from there is gated with error 1017072 "outdated app"
+    # BEFORE Upstox even sees the request. Verified 2026-05-19 by side-
+    # by-side curl from tidi: -4 and default -6 both return HTTP 401 in
+    # <120ms (clean pass-through), whereas the Route64 /128 returns the
+    # 1017072 wall.
+    #
+    # Override via UPSTOX_LOGIN_SKIP_BIND=false if a specific customer's
+    # Upstox developer app strictly whitelists ONLY the per-customer IPv6
+    # for login (uncommon — Upstox's "Allowed IPs" feature typically
+    # accepts multiple entries).
+    #
+    # NB: TRADE-flow API calls (api.upstox.com/v2/order/place etc.) are
+    # NOT affected by this change. Those go through urllib3, which IS
+    # intercepted by utils/source_bind's monkeypatch, so they continue
+    # to egress from the customer's per-customer IPv6 as before.
+    if not _login_should_skip_bind():
+        from ._curl_cffi_bind import bind_to_client_ipv6
+        bind_to_client_ipv6(sess)
 
     # Step 1: Initiate OAuth dialog. Whitelisted IPs get a 302 with user_id in
     # the redirect URL query string; non-whitelisted IPs get a generic login
