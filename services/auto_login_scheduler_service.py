@@ -106,6 +106,52 @@ def run_daily_auto_logins() -> dict:
                 if res.get("ok"):
                     summary["ok"] += 1
                     logger.info(f"auto-login OK user={user.username} broker={broker}")
+
+                    # Pre-download the day's master contract so the first user
+                    # login of the day doesn't pay the ~60s download cost on
+                    # the worker thread (the actual blocking issue surfaced
+                    # in the 2026-05-19 slow Manage Brokers investigation —
+                    # `async_master_contract_download` runs in a daemon Thread
+                    # off the login response and holds the GIL during the
+                    # bulk SQL insert + cache load, blocking other requests
+                    # to gunicorn --workers=1 for ~35s).
+                    #
+                    # We're inside an APScheduler worker thread here, and
+                    # market open is ~75 min away (08:00 → 09:15 IST default),
+                    # so a sync download is fine — even 2-3 brokers serially
+                    # at ~60s each finishes by 08:05 IST.
+                    try:
+                        from utils.auth_utils import (
+                            should_download_master_contract,
+                            async_master_contract_download,
+                        )
+                        should_dl, reason = should_download_master_contract(broker)
+                        if should_dl:
+                            logger.info(
+                                f"auto-login: pre-downloading master contract for "
+                                f"{broker} (user={user.username}, reason={reason})"
+                            )
+                            # No app_context wrapping: the existing user-login
+                            # path also calls this from a bare daemon Thread
+                            # without context — the function is context-safe
+                            # (db_session is scoped per-thread; socketio emits
+                            # fail silently if no context, but the download
+                            # + DB writes succeed).
+                            async_master_contract_download(broker)
+                            summary.setdefault("contracts_downloaded", 0)
+                            summary["contracts_downloaded"] += 1
+                        else:
+                            logger.debug(
+                                f"auto-login: master contract for {broker} is "
+                                f"current ({reason}); skipping pre-download"
+                            )
+                    except Exception:
+                        # Download failure is non-fatal — the user-login path
+                        # will retry on demand. Log + continue.
+                        logger.exception(
+                            f"auto-login: master contract pre-download crashed "
+                            f"for user={user.username} broker={broker}"
+                        )
                 else:
                     summary["failed"] += 1
                     logger.warning(
