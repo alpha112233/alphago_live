@@ -6,6 +6,10 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main]
+  # Manual trigger from the Actions tab. Useful for verifying the workflow
+  # actually runs after enabling Actions at org level — push events take a
+  # human commit to test, dispatch needs only a button click.
+  workflow_dispatch:
 
 permissions:
   contents: read
