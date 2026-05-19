@@ -3,12 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
 
 permissions:
   contents: read
   actions: write
+  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -176,27 +178,32 @@ jobs:
           git diff --staged --quiet || git commit -m "chore: auto-build frontend dist [skip ci]"
           git push
 
-  # Docker build, scan, and push to Docker Hub (main branch only).
+  # Docker build, scan, and push to GitHub Container Registry (GHCR).
   #
-  # Multi-arch (issue #1205): builds linux/amd64 and linux/arm64 natively on
-  # per-arch GitHub runners (ubuntu-latest / ubuntu-24.04-arm). No QEMU
-  # emulation — each matrix leg runs on its own native arch. This is
-  # essential because the image now installs chromium for Kaleido/Plotly
-  # chart rendering, and chromium's apt post-install scripts are painfully
-  # slow under QEMU (15-25 min vs ~2 min native).
+  # alphago_live fork (2026-05-19): switched publish target from Docker
+  # Hub (sudhan/openalgo) to GHCR (ghcr.io/alpha112233/alphago_live). The
+  # existing subscriber container `openalgo-demo` on tidi already pulls
+  # from this GHCR namespace; .env.template will point all new and
+  # migrated subscribers at the same image. Uses the auto-provided
+  # GITHUB_TOKEN — no manual repo secrets to maintain.
+  #
+  # Multi-arch (issue #1205): builds linux/amd64 and linux/arm64 natively
+  # on per-arch GitHub runners (ubuntu-latest / ubuntu-24.04-arm). No
+  # QEMU emulation — each matrix leg runs on its own native arch. This
+  # is essential because the image now installs chromium for Kaleido /
+  # Plotly chart rendering, and chromium's apt post-install scripts are
+  # painfully slow under QEMU (15-25 min vs ~2 min native).
   #
   # On PRs: each leg builds with `load: true` and runs the Kaleido smoke
-  # test against the locally-loaded image of its own arch. No push. This
-  # gives us native arm64 smoke-test coverage that a single-arch CI could
-  # never provide.
+  # test against the locally-loaded image of its own arch. No push.
   #
-  # On main push: each leg builds and pushes by digest (no tag assigned),
-  # then the docker-manifest job downloads all per-arch digests and
-  # assembles them into a single Docker Hub manifest list under the
-  # canonical tags (:latest, :<sha>).
+  # On main push / v* tag push: each leg builds and pushes by digest (no
+  # tag assigned), then the docker-manifest job downloads all per-arch
+  # digests and assembles them into a single GHCR manifest list under
+  # the canonical tags (:latest on main, :<sha>, and :v<semver> on tag).
   docker-build:
     needs: [backend-lint, backend-test, frontend-build, security-scan]
-    # Skip for fork PRs (secrets not available)
+    # PRs from forks can't write to GHCR with GITHUB_TOKEN — skip there.
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name == 'push'
     strategy:
       fail-fast: false
@@ -214,12 +221,13 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      - name: Login to GHCR
+        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       # Per-arch metadata — labels only. Final tags are assigned by the
       # docker-manifest merge job, not here.
@@ -227,7 +235,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/openalgo
+          images: ghcr.io/${{ github.repository }}
 
       # PR path: build single-arch and load into the runner's local Docker
       # daemon for the smoke test. No push.
@@ -243,17 +251,17 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=${{ matrix.suffix }}
 
-      # Main-push path: build per-arch and push by digest. The manifest
-      # job downstream assembles the per-arch digests into the final
-      # multi-arch tags.
-      - name: Build (main push by digest)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      # Push path: build per-arch and push by digest. The manifest job
+      # downstream assembles the per-arch digests into the final
+      # multi-arch tags. Runs on main push AND on v* tag push.
+      - name: Build (push by digest)
+        if: github.event_name == 'push'
         id: build-main
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=${{ secrets.DOCKERHUB_USERNAME }}/openalgo,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository }},push-by-digest=true,name-canonical=true,push=true
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.suffix }}
           cache-to: type=gha,mode=max,scope=${{ matrix.suffix }}
@@ -288,14 +296,14 @@ jobs:
       # Export the per-arch digest so the docker-manifest job can pick it
       # up and assemble the final manifest list.
       - name: Export digest
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'push'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build-main.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@v6
         with:
           name: digests-${{ matrix.suffix }}
@@ -303,14 +311,22 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Assemble the per-arch digests into a single Docker Hub manifest list
-  # (linux/amd64 + linux/arm64) under the canonical tags (:latest, :<sha>).
-  # Runs only on main push; Trivy scan against the assembled image also
-  # happens here.
+  # Assemble the per-arch digests into a single GHCR manifest list
+  # (linux/amd64 + linux/arm64). Tag policy:
+  #   :latest    — only on main push (NOT on v* tag push, to avoid races)
+  #   :<sha>     — every push, both main and tag
+  #   :v<ver>    — only on v* tag push (matches GitHub release tag)
+  #   :<ver-mm>  — major.minor convenience tag (e.g. v1.2.3 → :1.2)
+  # Subscribers pin to :v<ver> in their per-client .env so a bad merge
+  # to main never auto-deploys (they only get the new version after a
+  # tag is cut and `manage.py update-all --version v<ver>` runs).
   docker-manifest:
     runs-on: ubuntu-latest
     needs: docker-build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Download digests
         uses: actions/download-artifact@v8
@@ -321,35 +337,38 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/openalgo
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha,prefix=
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
 
       - name: Create multi-arch manifest list
         working-directory: /tmp/digests
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf '${{ secrets.DOCKERHUB_USERNAME }}/openalgo@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
 
       - name: Inspect assembled image
         run: |
-          docker buildx imagetools inspect ${{ secrets.DOCKERHUB_USERNAME }}/openalgo:${{ steps.meta.outputs.version }}
+          docker buildx imagetools inspect ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
 
       - name: Trivy vulnerability scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ secrets.DOCKERHUB_USERNAME }}/openalgo:latest
+          image-ref: ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.version }}
           exit-code: '0'
           severity: 'CRITICAL,HIGH'
           format: 'table'
