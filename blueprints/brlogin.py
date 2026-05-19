@@ -58,8 +58,37 @@ def broker_callback(broker, para=None):
             logger.warning(f"User not in session for {broker} callback, redirecting to login")
             return redirect(url_for("auth.login"))
 
-    if session.get("logged_in"):
+    # alphago_live fork (2026-05-19): short-circuit only when there's NO
+    # auth payload to process.
+    #
+    # Background: when a logged-in user clicks Connect to switch to a new
+    # broker, the OAuth callback returns to /broker/<new>/callback?code=…
+    # — the OLD short-circuit kicked in (session.logged_in==True), set
+    # session["broker"] to the new broker, redirected to dashboard, and
+    # NEVER called authenticate_broker. The new broker had no token in
+    # auth_db, the dashboard's /margin call sent the still-active OLD
+    # broker's token to the new broker's API, and got UDAPI100050 /
+    # equivalent "invalid token" rejection.
+    #
+    # Verified 2026-05-19 on openalgo-test: logged in via Dhan in the
+    # morning → clicked Upstox Connect at 12:32 → Upstox callback fired
+    # with a fresh OAuth code → brlogin short-circuited → auth_db still
+    # had Dhan JWT → funds API call to api.upstox.com returned 401
+    # UDAPI100050. No `auth_api` log lines fired (token exchange never
+    # ran).
+    #
+    # Guard: anything with an auth payload (POST form for TOTP flows,
+    # GET with OAuth ?code=…) bypasses the short-circuit and runs the
+    # real auth function. A bare GET with no args (operator pasting the
+    # callback URL into the address bar while already logged in) still
+    # gets the dashboard redirect — preserving the existing UX.
+    has_auth_payload = request.method == "POST" or bool(request.args)
+    if session.get("logged_in") and not has_auth_payload:
         # Store broker in session and g
+        logger.info(
+            f"brlogin: skipping callback for {broker} (user already logged in, "
+            "no auth payload in request) → redirecting to dashboard"
+        )
         session["broker"] = broker
         return redirect(url_for("dashboard_bp.dashboard"))
 
