@@ -494,14 +494,28 @@ def setup_environment(app):
 
     setup_ngrok_handlers()
 
-    # Run database init + schedulers in background thread
-    # Tables already exist after first run; this is a safety check
+    # alphago_live fork: database table init runs SYNCHRONOUSLY at app
+    # creation time. Upstream OpenAlgo backgrounded this on a daemon thread
+    # and gated requests behind a `wait_for_db_ready` before_request hook
+    # (timeout 30s, typical wait ~3.5s) so that gunicorn could boot
+    # instantly. With --workers 1 (start.sh) that translates into every
+    # first request after a worker restart paying the full DB-init wait.
+    # For per-subscriber containers that boot once and run all day, an
+    # extra ~3.5s of invisible startup time is strictly better than a
+    # visible 3.5s wait on the first page load. The slower scheduler /
+    # cache / telegram bootstrap is kept in the background — only the
+    # part request handlers depend on (DB tables existing) moves to
+    # synchronous.
     import threading
 
-    # Event to signal when DB init is complete (cache restoration waits on this)
+    # db_ready stays as an Event for backward compatibility — the upstream
+    # `wait_for_db_ready` before_request hook and `_restore_caches_background`
+    # both read it. We set it as soon as table creation finishes.
     app.db_ready = threading.Event()
 
-    def _init_databases_and_schedulers():
+    def _init_databases_sync():
+        """Create / verify all SQLite tables. Runs inline at app creation —
+        request handlers will not run until this completes."""
         with app.app_context():
             import time
             from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -548,10 +562,19 @@ def setup_environment(app):
                         logger.error(f"Failed to initialize {db_name}: {e}")
 
             db_init_time = (time.time() - db_init_start) * 1000
-            logger.debug(f"All databases initialized in parallel ({db_init_time:.0f}ms)")
+            logger.info(f"All databases initialized synchronously ({db_init_time:.0f}ms)")
 
-            # Signal that DB tables are ready (unblocks cache restoration)
+            # Signal that DB tables are ready — cache_restoration / scheduler
+            # bootstrap threads downstream may wait on this even though it's
+            # now always set by the time they start.
             app.db_ready.set()
+
+    def _init_schedulers_and_extras():
+        """Schedulers + telegram bot + analyzer-mode services. Kept in a
+        background thread so they don't extend gunicorn boot — none of
+        these are on the request-handler critical path."""
+        with app.app_context():
+            from concurrent.futures import ThreadPoolExecutor, as_completed
 
             # alphago_live fork: re-populate BROKER_API_KEY etc. from
             # broker_creds_db (Fernet-encrypted). On a fresh container the
@@ -694,7 +717,10 @@ def setup_environment(app):
             except Exception as e:
                 logger.error(f"Error auto-starting Telegram bot: {e}")
 
-    threading.Thread(target=_init_databases_and_schedulers, daemon=True).start()
+    # Run DB table creation SYNCHRONOUSLY — request handlers won't run until
+    # this completes. Schedulers + bots run async in a background thread.
+    _init_databases_sync()
+    threading.Thread(target=_init_schedulers_and_extras, daemon=True).start()
 
 
 app = create_app()
