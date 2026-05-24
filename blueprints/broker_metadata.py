@@ -125,6 +125,36 @@ BROKER_FIELDS: dict[str, list[dict]] = {
     # morning via the /broker/definedge/totp page. No TOTP-seed shortcut at
     # the API auth layer today — the OTP is delivered via email/SMS only.
     "definedge": [_TEXT_KEY, _TEXT_SECRET],
+    # Arihant TradeBridge — TRADING-CRITICAL PORTED. Auth is appId + (refresh
+    # token saved via one-time OTP login). api_secret format:
+    # `{user_id}:::{refresh_token}` (set by the /broker/arihant/login flow).
+    # Plugin design-parity-ready but NOT enabled in hostingsol allowlist
+    # until Arihant publishes AAAA (no AAAA as of 2026-05-20).
+    "arihant": [
+        {"name": "api_key", "label": "Arihant App ID (api-key)",
+         "type": "text", "required": True,
+         "help": "Issued by Arihant's TradeBridge developer portal."},
+        {"name": "api_secret", "label": "user_id:::refresh_token (set after OTP login)",
+         "type": "password", "required": False,
+         "help": "Auto-populated after you complete one-time OTP login at /broker/arihant/login. Daily auto-login uses the refresh token to mint fresh access tokens."},
+    ],
+    # ICICI Direct Breeze API — SCAFFOLDING ONLY. Trading endpoints raise
+    # NotImplementedError until the follow-up PR. Customer can save creds;
+    # actual trading is gated.
+    "icicidirect": [
+        _TEXT_KEY,
+        {"name": "api_secret", "label": "Daily access_token (manually pasted)",
+         "type": "password", "required": True,
+         "help": "Generate at api.icicidirect.com → developer console → daily session. Full programmatic OAuth lands in follow-up PR."},
+    ],
+    # HDFC Securities — SCAFFOLDING ONLY. Same as ICICI: auth-token paste
+    # only, trading endpoints stubbed pending the follow-up port.
+    "hdfcsec": [
+        _TEXT_KEY,
+        {"name": "api_secret", "label": "Daily access_token (manually pasted)",
+         "type": "password", "required": True,
+         "help": "Generate at developer.hdfcsec.com → OAuth flow → 24h token. Full programmatic OAuth lands in follow-up PR."},
+    ],
 }
 
 # Per-broker setup instructions — markdown rendered in the React frontend.

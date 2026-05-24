@@ -1,0 +1,11 @@
+{
+    "Plugin Name": "arihant",
+    "Plugin URI": "https://github.com/alpha112233/alphago_live",
+    "Description": "Arihant Capital TradeBridge L2 SDK — ported from prod-alphaquark-github + ccxt-india",
+    "Version": "0.1",
+    "Author": "AlphaQuark",
+    "Author URI": "https://alphaquark.in",
+    "supported_exchanges": ["NSE", "BSE", "NFO", "BFO", "MCX"],
+    "broker_type": "IN_stock",
+    "leverage_config": false
+}

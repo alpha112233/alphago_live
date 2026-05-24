@@ -1,0 +1,11 @@
+{
+    "Plugin Name": "hdfcsec",
+    "Plugin URI": "https://github.com/alpha112233/alphago_live",
+    "Description": "HDFC Securities API plugin — scaffolding only, trading endpoints land in follow-up PR",
+    "Version": "0.1-scaffold",
+    "Author": "AlphaQuark",
+    "Author URI": "https://alphaquark.in",
+    "supported_exchanges": ["NSE", "BSE", "NFO", "BFO"],
+    "broker_type": "IN_stock",
+    "leverage_config": false
+}
