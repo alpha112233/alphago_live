@@ -138,14 +138,20 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "type": "password", "required": False,
          "help": "Auto-populated after you complete one-time OTP login at /broker/arihant/login. Daily auto-login uses the refresh token to mint fresh access tokens."},
     ],
-    # ICICI Direct Breeze API — SCAFFOLDING ONLY. Trading endpoints raise
-    # NotImplementedError until the follow-up PR. Customer can save creds;
-    # actual trading is gated.
+    # ICICI Direct Breeze API — full port (feat/icici-direct-full-port).
+    # Customer pastes app_key + secret_key once; daily session_token is
+    # captured automatically via Breeze's OAuth redirect to
+    # /broker/icicidirect/callback?apisession=...
     "icicidirect": [
-        _TEXT_KEY,
-        {"name": "api_secret", "label": "Daily access_token (manually pasted)",
+        {"name": "api_key", "label": "Breeze App Key",
+         "type": "text", "required": True,
+         "help": "From api.icicidirect.com → Developer Console → Apps. The 'App Key' (NOT the API Key Secret)."},
+        {"name": "api_secret", "label": "Breeze Secret Key",
          "type": "password", "required": True,
-         "help": "Generate at api.icicidirect.com → developer console → daily session. Full programmatic OAuth lands in follow-up PR."},
+         "help": "From the same Developer Console row as the App Key. Used to sign every request — stable across days."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)",
+         "type": "password", "required": False,
+         "help": "Stored encrypted for future automated daily login. From ICICI Direct mobile app → Profile → Security → Two-Factor Authentication → TOTP setup."},
     ],
     # HDFC Securities — SCAFFOLDING ONLY. Same as ICICI: auth-token paste
     # only, trading endpoints stubbed pending the follow-up port.
@@ -154,6 +160,9 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "api_secret", "label": "Daily access_token (manually pasted)",
          "type": "password", "required": True,
          "help": "Generate at developer.hdfcsec.com → OAuth flow → 24h token. Full programmatic OAuth lands in follow-up PR."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32, optional)",
+         "type": "password", "required": False,
+         "help": "Stored encrypted for future automated daily login. From HDFC Securities mobile app → Profile → Security → TOTP."},
     ],
 }
 
