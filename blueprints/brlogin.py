@@ -349,6 +349,176 @@ def broker_callback(broker, para=None):
         auth_token, feed_token, user_id, error_message = auth_function(code)
         forward_url = "broker.html"
 
+    elif broker == "arihant":
+        # Arihant Capital (TradeBridge L2) — two-stage OTP login.
+        #
+        # Customer never persists their Arihant trading password; they
+        # enter user_id + password ONCE here, we use it to trigger an
+        # OTP, exchange the OTP for a refresh_token, and store the
+        # refresh_token (joined as ``user_id:::refresh_token``) into
+        # broker_creds_db.api_secret_enc. Daily auto-login re-mints the
+        # access token from the refresh_token without prompting again
+        # (see broker/arihant/api/auth_api.authenticate_broker).
+        from broker.arihant.api.auth_api import login_initiate, verify_otp
+
+        api_key = (os.getenv("BROKER_API_KEY") or "").strip()
+        if not api_key:
+            return handle_auth_failure(
+                "BROKER_API_KEY (Arihant App ID / api-key) not configured. "
+                "Save your Arihant credentials in Manage Brokers first.",
+                forward_url="broker.html",
+            )
+
+        def _arihant_page(title, body_html):
+            return f"""<!DOCTYPE html>
+<html lang="en"><head>
+  <meta charset="utf-8"><title>Arihant Connect — {title}</title>
+  <style>
+    body {{ font-family: -apple-system,BlinkMacSystemFont,sans-serif; max-width: 480px;
+            margin: 60px auto; padding: 24px; color: #111; }}
+    h2 {{ font-size: 1.4rem; margin-bottom: 4px; }}
+    p.note {{ color: #666; font-size: 0.9rem; margin-top: 0; margin-bottom: 24px; }}
+    label {{ display: block; margin-top: 16px; font-weight: 600; font-size: 0.9rem; }}
+    input[type=text], input[type=password] {{ width: 100%; padding: 10px;
+            border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;
+            font-size: 1rem; }}
+    button {{ margin-top: 24px; width: 100%; padding: 12px; background: #111;
+             color: #fff; border: 0; border-radius: 6px; font-size: 1rem;
+             cursor: pointer; }}
+    button:hover {{ background: #333; }}
+    .err {{ color: #b00; margin-top: 12px; padding: 8px; background: #fee;
+            border-radius: 4px; font-size: 0.9rem; }}
+  </style>
+</head><body>{body_html}</body></html>"""
+
+        if request.method == "GET":
+            return _arihant_page("Step 1 of 2", """
+  <h2>Connect Arihant Capital — Step 1 of 2</h2>
+  <p class="note">Enter your Arihant trading credentials. An OTP will be sent to
+  your registered mobile/email. You only do this once — daily auto-login is
+  handled by the refresh token after this.</p>
+  <form method="post" action="/arihant/callback">
+    <input type="hidden" name="step" value="login">
+    <label>Arihant User ID</label>
+    <input type="text" name="user_id" required autocomplete="username">
+    <label>Trading Password</label>
+    <input type="password" name="password" required autocomplete="current-password">
+    <button type="submit">Send OTP</button>
+  </form>
+""")
+
+        elif request.method == "POST":
+            step = request.form.get("step", "login")
+
+            if step == "login":
+                user_id_in = (request.form.get("user_id") or "").strip()
+                password = (request.form.get("password") or "").strip()
+                if not user_id_in or not password:
+                    return _arihant_page("Step 1 of 2", """
+  <h2>Connect Arihant Capital — Step 1 of 2</h2>
+  <div class="err">User ID and Password are required.</div>
+  <p><a href="/arihant/callback">Try again</a></p>
+""")
+                try:
+                    resp = login_initiate(api_key=api_key, user_id=user_id_in, password=password)
+                except Exception as e:
+                    logger.exception("Arihant login_initiate exception")
+                    return _arihant_page("Error", f'<div class="err">Login failed: {e}</div>')
+
+                data = (resp or {}).get("data") or {}
+                txn_id = data.get("txnId")
+                if not txn_id:
+                    msg = (resp or {}).get("infoMsg") or "Login failed"
+                    logger.error(f"Arihant login failed: {resp!r}")
+                    return _arihant_page("Step 1 of 2",
+                        f'<h2>Connect Arihant Capital — Step 1 of 2</h2>'
+                        f'<div class="err">{msg}</div>'
+                        f'<p><a href="/arihant/callback">Try again</a></p>')
+
+                session["arihant_txn_id"] = txn_id
+                session["arihant_user_id"] = user_id_in
+                logger.info(f"Arihant: OTP sent (txnId={txn_id[:8]}..., user={user_id_in})")
+
+                two_fa = data.get("twoFAType") or "OTP"
+                return _arihant_page("Step 2 of 2", f"""
+  <h2>Connect Arihant Capital — Step 2 of 2</h2>
+  <p class="note">OTP sent via {two_fa}. Check your registered mobile/email and
+  enter the code below.</p>
+  <form method="post" action="/arihant/callback">
+    <input type="hidden" name="step" value="verify">
+    <label>OTP</label>
+    <input type="text" name="otp" inputmode="numeric" required autofocus>
+    <button type="submit">Verify &amp; Connect</button>
+  </form>
+""")
+
+            elif step == "verify":
+                otp = (request.form.get("otp") or "").strip()
+                txn_id = session.get("arihant_txn_id")
+                arihant_user = session.get("arihant_user_id")
+                if not otp or not txn_id or not arihant_user:
+                    return _arihant_page("Session expired", """
+  <h2>Connect Arihant Capital</h2>
+  <div class="err">Session expired before OTP verification. Please restart.</div>
+  <p><a href="/arihant/callback">Start over</a></p>
+""")
+                try:
+                    resp = verify_otp(api_key=api_key, user_id=arihant_user,
+                                      txn_id=txn_id, otp=otp)
+                except Exception as e:
+                    logger.exception("Arihant verify_otp exception")
+                    return _arihant_page("Error", f'<div class="err">Verify failed: {e}</div>')
+
+                data = (resp or {}).get("data") or {}
+                access_token = data.get("accessToken")
+                refresh_token = data.get("refreshToken")
+                if not access_token or not refresh_token:
+                    msg = (resp or {}).get("infoMsg") or "OTP verification failed"
+                    logger.error(f"Arihant verify_otp failed: {resp!r}")
+                    return _arihant_page("Step 2 of 2",
+                        f'<h2>Connect Arihant Capital — Step 2 of 2</h2>'
+                        f'<div class="err">{msg}</div>'
+                        f'<p><a href="/arihant/callback">Restart</a></p>')
+
+                # Persist the refresh token into broker_creds_db so daily
+                # auto-login can use it. Also re-export to env so the rest
+                # of this request sees the new secret.
+                try:
+                    from database.broker_creds_db import (
+                        add_or_update_broker_creds, get_broker_creds,
+                    )
+                    from database.user_db import User, db_session
+                    admin = db_session.query(User).filter_by(is_admin=True).first()
+                    if admin is not None:
+                        existing = get_broker_creds(admin.id, "arihant") or {}
+                        add_or_update_broker_creds(
+                            user_id=admin.id, broker="arihant",
+                            api_key=existing.get("api_key") or api_key,
+                            api_secret=f"{arihant_user}:::{refresh_token}",
+                        )
+                        os.environ["BROKER_API_SECRET"] = f"{arihant_user}:::{refresh_token}"
+                        logger.info(f"Arihant: refresh_token persisted for user_id={arihant_user}")
+                    else:
+                        logger.warning("Arihant: no admin user yet — refresh_token NOT persisted")
+                except Exception as e:
+                    logger.exception("Arihant: failed to persist refresh_token")
+                    return _arihant_page("Error",
+                        f'<div class="err">Login succeeded but storing refresh token failed: {e}</div>')
+
+                # Clean session keys; fall through to the common
+                # handle_auth_success path with the fresh access token.
+                session.pop("arihant_txn_id", None)
+                session.pop("arihant_user_id", None)
+
+                auth_token = access_token
+                feed_token = None
+                user_id = arihant_user
+                error_message = None
+                forward_url = "broker.html"
+            else:
+                return _arihant_page("Bad step",
+                    f'<div class="err">Unknown step: {step!r}</div>')
+
     elif broker == "ibulls":
         code = "ibulls"
         logger.debug(f"Indiabulls broker - code: {code}")
