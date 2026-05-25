@@ -153,13 +153,17 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "type": "password", "required": False,
          "help": "Stored encrypted for future automated daily login. From ICICI Direct mobile app → Profile → Security → Two-Factor Authentication → TOTP setup."},
     ],
-    # HDFC Securities — SCAFFOLDING ONLY. Same as ICICI: auth-token paste
-    # only, trading endpoints stubbed pending the follow-up port.
+    # HDFC Securities (InvestRight API) — full port (feat/hdfcsec-full-port).
+    # Customer pastes Consumer Key + Consumer Secret once; the daily
+    # access_token is captured automatically via InvestRight's OAuth
+    # redirect to /broker/hdfcsec/callback?request_token=...
     "hdfcsec": [
-        _TEXT_KEY,
-        {"name": "api_secret", "label": "Daily access_token (manually pasted)",
+        {"name": "api_key", "label": "InvestRight Consumer Key",
+         "type": "text", "required": True,
+         "help": "From developer.hdfcsec.com → Apps → your application. Stable across days."},
+        {"name": "api_secret", "label": "InvestRight Consumer Secret",
          "type": "password", "required": True,
-         "help": "Generate at developer.hdfcsec.com → OAuth flow → 24h token. Full programmatic OAuth lands in follow-up PR."},
+         "help": "From the same Apps row as the Consumer Key. Used to sign the daily access_token exchange."},
         {"name": "totp_seed", "label": "TOTP Seed (base32, optional)",
          "type": "password", "required": False,
          "help": "Stored encrypted for future automated daily login. From HDFC Securities mobile app → Profile → Security → TOTP."},

@@ -323,6 +323,32 @@ def broker_callback(broker, para=None):
         auth_token, feed_token, user_id, error_message = auth_function(code)
         forward_url = "broker.html"
 
+    elif broker == "hdfcsec":
+        # HDFC Securities (InvestRight) OAuth flow: callback returns
+        # ?request_token=<token>. On a bare GET (no request_token yet)
+        # build the InvestRight login URL from BROKER_API_KEY and redirect.
+        from broker.hdfcsec.api.auth_api import get_login_url
+
+        code = (
+            request.args.get("request_token")
+            or request.args.get("requestToken")
+            or request.args.get("code")
+        )
+        if not code and request.method == "GET":
+            login_url = get_login_url()
+            if not login_url:
+                return handle_auth_failure(
+                    "BROKER_API_KEY (HDFC Consumer Key) is not configured. "
+                    "Save your HDFC Securities credentials first, then try connecting again.",
+                    forward_url="broker.html",
+                )
+            logger.info(f"HDFC Securities: redirecting to InvestRight OAuth at {login_url}")
+            return redirect(login_url)
+
+        logger.debug(f"HDFC Securities OAuth callback - request_token={code!r}")
+        auth_token, feed_token, user_id, error_message = auth_function(code)
+        forward_url = "broker.html"
+
     elif broker == "ibulls":
         code = "ibulls"
         logger.debug(f"Indiabulls broker - code: {code}")

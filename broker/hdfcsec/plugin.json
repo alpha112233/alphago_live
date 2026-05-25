@@ -1,11 +1,11 @@
 {
     "Plugin Name": "hdfcsec",
     "Plugin URI": "https://github.com/alpha112233/alphago_live",
-    "Description": "HDFC Securities API plugin — scaffolding only, trading endpoints land in follow-up PR",
-    "Version": "0.1-scaffold",
+    "Description": "HDFC Securities InvestRight API — full REST trading port (orders, holdings, positions, funds, master contract). NOWStream WebSocket is a separate follow-up.",
+    "Version": "1.0",
     "Author": "AlphaQuark",
     "Author URI": "https://alphaquark.in",
-    "supported_exchanges": ["NSE", "BSE", "NFO", "BFO"],
+    "supported_exchanges": ["NSE", "BSE", "NFO", "BFO", "CDS", "MCX"],
     "broker_type": "IN_stock",
     "leverage_config": false
 }
