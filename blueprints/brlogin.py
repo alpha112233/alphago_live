@@ -301,12 +301,26 @@ def broker_callback(broker, para=None):
 
         forward_url = "broker.html"
 
-    elif broker == "icici":
-        full_url = request.full_path
-        logger.debug(f"ICICI broker - Full URL: {full_url}")
+    elif broker == "icicidirect":
+        # ICICI Direct Breeze OAuth callback: ?apisession=<session_token>.
+        # If the request has no apisession yet, build the Breeze login URL
+        # from the customer's app_key (BROKER_API_KEY) and redirect there.
+        from broker.icicidirect.api.auth_api import get_login_url
+
         code = request.args.get("apisession")
-        logger.debug(f"ICICI broker - The code is {code}")
-        auth_token, error_message = auth_function(code)
+        if not code and request.method == "GET":
+            login_url = get_login_url()
+            if not login_url:
+                return handle_auth_failure(
+                    "BROKER_API_KEY (Breeze App Key) is not configured. "
+                    "Save your ICICI Direct credentials first, then try connecting again.",
+                    forward_url="broker.html",
+                )
+            logger.info(f"ICICI Direct: redirecting to Breeze OAuth at {login_url}")
+            return redirect(login_url)
+
+        logger.debug(f"ICICI Direct OAuth callback - apisession={code!r}")
+        auth_token, feed_token, user_id, error_message = auth_function(code)
         forward_url = "broker.html"
 
     elif broker == "ibulls":
