@@ -61,12 +61,32 @@ broker/hdfcsec/
 - Scrip master: `ccxt-india/brokers/hdfc/hdfcsec_scrip_master.py` (254 LOC)
 - Prod Node implementation: `aq_backend_github/Routes/Broker/Hdfc.js`
 
-## IPv6 status
+## IPv6 status — IPv4-ONLY, NOT reachable from hostingsol egress
 
-✅ `developer.hdfcsec.com` has AAAA via AWS ALB CNAME (confirmed
-2026-05-20). After this PR merges and the alphago_live image is
-republished, hdfcsec can be added to hostingsol's `SUPPORTED_BROKERS`
-allowlist.
+⚠️ The previous scaffold claimed AAAA via AWS ALB CNAME. **That was wrong.**
+Re-verified 2026-05-25 from multiple resolvers:
+
+```
+$ dig developer.hdfcsec.com AAAA +short
+hsl-aws-aps1-alb-prod-370976271.ap-south-1.elb.amazonaws.com.   (CNAME only)
+$ dig developer.hdfcsec.com A +short
+13.127.107.37
+13.126.100.11
+```
+
+The CNAME target is an IPv4-only AWS ALB. Since hostingsol's per-customer
+egress is a GRE /128 IPv6 tunnel, customer containers physically cannot
+reach this host. The InvestRight REST port code in this directory is
+correct and works on any dual-stack network — but `hdfcsec` is
+**deliberately excluded** from hostingsol's `SUPPORTED_BROKERS` until
+either:
+
+- HDFC enables dual-stack on the ALB (out of our control), OR
+- hostingsol gets per-customer IPv4 routing infra (tracked in
+  `hostingsol/docs/B5_HAPROXY_PROGRESS.md` — multi-week project).
+
+The exclusion is documented in code: see
+`hostingsol/provisioner/provision.py` around `SUPPORTED_BROKERS`.
 
 ## Known follow-ups
 
