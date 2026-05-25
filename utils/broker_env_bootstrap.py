@@ -63,10 +63,27 @@ def bootstrap_active_broker() -> None:
         host_server = os.getenv("HOST_SERVER", "").rstrip("/")
         redirect_url = f"{host_server}/{broker}/callback" if host_server else ""
 
-        os.environ["BROKER_API_KEY"] = creds.get("api_key", "") or ""
+        api_key = creds.get("api_key", "") or ""
+        # Broker-specific packing of BROKER_API_KEY.
+        #
+        # Dhan's /dhan/initiate-oauth handler expects BROKER_API_KEY in the
+        # form `client_id:::api_key` (it splits on `:::` to pull the client
+        # ID). The dashboard form collects client_code and api_key as
+        # separate fields, so the bootstrap has to do the join here. Other
+        # brokers that use the same `<id>:::<key>` convention — Flattrade —
+        # already store the joined string in the api_key field itself
+        # (the customer pastes it pre-joined), so they don't need this
+        # branch.
+        client_code = creds.get("client_code", "") or ""
+        if broker == "dhan" and client_code and ":::" not in api_key:
+            api_key = f"{client_code}:::{api_key}"
+
+        os.environ["BROKER_API_KEY"] = api_key
         os.environ["BROKER_API_SECRET"] = creds.get("api_secret", "") or ""
         os.environ["BROKER_API_KEY_MARKET"] = creds.get("api_key_market", "") or ""
         os.environ["BROKER_API_SECRET_MARKET"] = creds.get("api_secret_market", "") or ""
+        if client_code:
+            os.environ["BROKER_CLIENT_ID"] = client_code
         if redirect_url:
             os.environ["REDIRECT_URL"] = redirect_url
 
