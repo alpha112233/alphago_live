@@ -65,10 +65,9 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "type": "password", "required": False,
          "help": "Required for daily auto-login. From web.dhan.co → My Profile → 2FA Settings → save the seed during setup."},
     ],
-    "dhan_sandbox": [
-        {"name": "api_key", "label": "Sandbox: Client ID:::API Key", "type": "text", "required": True},
-        {"name": "api_secret", "label": "Sandbox API Secret", "type": "password", "required": True},
-    ],
+    # dhan_sandbox intentionally removed from the customer-facing list 2026-05-25.
+    # The plugin code stays in broker/dhan_sandbox/ for internal testing, but
+    # it's no longer surfaced in the Add Broker dropdown.
     "fyers": [_TEXT_KEY, _TEXT_SECRET,
         {"name": "client_code", "label": "Fyers Client ID (e.g. XK12345)", "type": "text", "required": False,
          "help": "Required if you provide a TOTP seed."},
@@ -86,7 +85,10 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "totp_seed", "label": "TOTP Seed (base32)", "type": "password", "required": True,
          "help": "Required — Kotak's daily auth flow uses TOTP, no OAuth redirect."},
     ],
-    "iifl": [_TEXT_KEY, _TEXT_SECRET],
+    # 'iifl' alias dropped from the dropdown 2026-05-25 — was a back-compat
+    # alias for iiflcapital and confused customers (two IIFLs in the picker).
+    # The brlogin "iifl" handler still exists for any pre-existing customer
+    # records, but new connections route through 'iiflcapital'.
     "iiflcapital": [_TEXT_KEY, _TEXT_SECRET],  # no TOTP seed — see iiflcapital instructions block: daemon login isn't possible, browser OAuth only
     "groww": [_TEXT_KEY,
         {"name": "api_secret", "label": "API Secret (approval mode, optional)",
@@ -125,6 +127,44 @@ BROKER_FIELDS: dict[str, list[dict]] = {
     # morning via the /broker/definedge/totp page. No TOTP-seed shortcut at
     # the API auth layer today — the OTP is delivered via email/SMS only.
     "definedge": [_TEXT_KEY, _TEXT_SECRET],
+    # Angel One (SmartAPI). Authenticates with client_code + PIN + TOTP each
+    # morning via the /broker/angel/totp form. TOTP seed stored for hands-free
+    # daily auto-login.
+    "angel": [_TEXT_KEY,
+        {"name": "client_code", "label": "Angel Client Code (e.g., A123456)",
+         "type": "text", "required": True,
+         "help": "Your Angel One trading client code — the same one you log in to angelone.in with."},
+        {"name": "extra.pin", "label": "MPIN (4-6 digits)",
+         "type": "password", "required": True,
+         "help": "The MPIN you use on the Angel One app or web login."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32)",
+         "type": "password", "required": True,
+         "help": "Required — Angel SmartAPI's daily auth uses TOTP. From Angel app → Profile → My Account → Settings → External 2FA → 'Can't scan QR' reveals the seed."},
+    ],
+    # 5paisa OpenAPI. Old-style client_code + PIN + TOTP login (same shape as
+    # Angel). 5paisa's developer console issues api_key + api_secret which are
+    # also required.
+    "fivepaisa": [_TEXT_KEY, _TEXT_SECRET,
+        {"name": "client_code", "label": "5paisa Client Code",
+         "type": "text", "required": True,
+         "help": "The numeric client ID printed on your 5paisa contract notes / login screen."},
+        {"name": "extra.pin", "label": "Trading PIN",
+         "type": "password", "required": True,
+         "help": "The 5paisa web/app login PIN."},
+        {"name": "totp_seed", "label": "TOTP Seed (base32)",
+         "type": "password", "required": True,
+         "help": "Required for daily auto-login. From 5paisa.com → Profile → Security → 2FA reveal."},
+    ],
+    # Paytm Money. OAuth redirect to login.paytmmoney.com/merchant-login —
+    # callback returns ?request_token=... which we exchange for an access
+    # token. Plugin shipped upstream, server-side TOTP autologin is NOT
+    # available (Paytm's OAuth needs the browser); the totp_seed field is
+    # reserved for a future automated path.
+    "paytm": [_TEXT_KEY, _TEXT_SECRET,
+        {"name": "client_code", "label": "Paytm Money Client ID (optional)",
+         "type": "text", "required": False,
+         "help": "Surfaced to the dashboard as a friendly identifier; not used by the OAuth flow itself."},
+    ],
     # Arihant TradeBridge — TRADING-CRITICAL PORTED. Auth is appId + (refresh
     # token saved via one-time OTP login). api_secret format:
     # `{user_id}:::{refresh_token}` (set by the /broker/arihant/login flow).
@@ -421,6 +461,101 @@ Official docs: link from the IndMoney app's Developer screen (no public docs pag
 ℹ️ Native GTT + OCO supported (`/gttplaceorder`, `/ocoplaceorder`).
 
 Official docs: https://signup.definedgesecurities.com/trading-api-docs
+""",
+    "angel": """\
+### Connect Angel One (SmartAPI)
+
+**Cost:** Free.
+
+1. Log in to **https://smartapi.angelone.in** with your Angel One trading credentials.
+2. **My Apps** → **Create New App**. Fill the form:
+   - **App Name:** anything (e.g. `MyAlgo`).
+   - **App Type:** **"Trading API"**.
+   - **Redirect URL:** paste:
+     ```
+     {{REDIRECT_URL}}
+     ```
+3. After creation the app page shows your **API Key**. Copy it.
+4. From Angel One mobile app → **Profile → Settings → External 2FA → 2FA Setup**, complete TOTP enrolment if not already done. On the QR screen, tap **"Can't scan? Enter manually"** to reveal the base32 **TOTP Seed**.
+5. Paste into the form here:
+   - **API Key:** from step 3.
+   - **Angel Client Code:** the trading client code shown on top-right of angelone.in after login (format `A123456`).
+   - **MPIN:** the 4–6 digit MPIN you use to log in.
+   - **TOTP Seed:** the base32 string from step 4.
+6. Save → Make Active.
+
+ℹ️ Angel rotates access tokens daily. With the TOTP seed our backend re-mints the token each morning at 08:00 IST. The connect flow is single-step (no browser redirect) — we POST client_code + MPIN + TOTP straight to SmartAPI.
+
+Official docs: https://smartapi.angelone.in/docs
+""",
+    "icicidirect": """\
+### Connect ICICI Direct (Breeze API)
+
+**Cost:** Free for retail ICICI Direct customers.
+
+1. Sign in at **https://api.icicidirect.com** with your ICICI Direct credentials. The "Developer Console" link appears in the top bar after login.
+2. **Developer Console → Apps → Create New App**. Fill the form:
+   - **App Name:** anything (e.g. `MyAlgo`).
+   - **Redirect URL:** paste:
+     ```
+     {{REDIRECT_URL}}
+     ```
+3. After saving the app, the page shows **App Key** and **Secret Key** (Breeze calls them "API Key" and "API Secret Key"). Copy both.
+4. (Optional) From the ICICI Direct mobile app → **Profile → Security → Two-Factor Authentication**, enable TOTP and save the base32 seed.
+5. Paste into the form here:
+   - **Breeze App Key:** from step 3.
+   - **Breeze Secret Key:** from step 3.
+   - **TOTP Seed:** optional, from step 4 — stored encrypted for a future automated daily login. Today the daily click is still needed.
+6. Save → click **Connect**. We redirect you to Breeze's login page; after you complete 2FA, Breeze sends a `?apisession=...` callback to AlphaGo which validates the session against `/customerdetails` and stores the daily token (valid until ~22:00 IST that night).
+
+ℹ️ Each Breeze app needs **one redirect URL** registered against it. If you change the redirect URL after creating the app you'll need to either edit the app or create a new one — Breeze rejects the OAuth flow if the callback URL doesn't match the app's registered value exactly (including the `/broker/icicidirect/callback` path).
+
+ℹ️ Equity + F&O + GTT all supported via REST. WS live ticks need `breeze-connect` (already bundled).
+
+Official docs: https://api.icicidirect.com/breezeapi/documents/
+""",
+    "fivepaisa": """\
+### Connect 5paisa OpenAPI
+
+**Cost:** Free for 5paisa account holders.
+
+1. Open **https://www.5paisa.com/developerapi** and sign in with your 5paisa trading credentials.
+2. **Create App** → fill the form (any app name; no redirect URL is needed for this PIN-based flow).
+3. The app page shows **API Key** (sometimes labelled "User Key") and **API Secret** ("User Secret"). Copy both.
+4. From the 5paisa mobile app → **Profile → Security → 2FA**, enable TOTP and save the base32 seed during setup.
+5. Paste into the form here:
+   - **API Key** + **API Secret:** from step 3.
+   - **5paisa Client Code:** the numeric client ID printed on your 5paisa contract notes / login screen.
+   - **Trading PIN:** the same PIN you use on 5paisa.com.
+   - **TOTP Seed:** base32 from step 4.
+6. Save → Make Active.
+
+ℹ️ Token rotates daily. With the TOTP seed we re-login automatically at 08:00 IST each trading day.
+
+Official docs: https://www.5paisa.com/developerapi/overview
+""",
+    "paytm": """\
+### Connect Paytm Money
+
+**Cost:** Free for Paytm Money customers.
+
+1. Open **https://developer.paytmmoney.com** and sign in with your Paytm Money credentials.
+2. **Apps → Create App**. Fill the form:
+   - **App Name:** anything.
+   - **Redirect URL:** paste:
+     ```
+     {{REDIRECT_URL}}
+     ```
+3. After saving, the app page shows **API Key** and **API Secret**. Copy both.
+4. Paste into the form here:
+   - **API Key:** from step 3.
+   - **API Secret:** from step 3.
+   - **Paytm Client ID** (optional): your Paytm Money client number — shown for your reference; not used by the OAuth flow.
+5. Save → click **Connect**. We redirect you to `login.paytmmoney.com/merchant-login`; after you authenticate, Paytm sends a `?request_token=...` callback to AlphaGo which exchanges it for a daily access token.
+
+ℹ️ **No daemon auto-login today:** Paytm's flow requires the browser-driven OAuth step every morning. Auto-login support is on the roadmap pending a programmatic path from Paytm.
+
+Official docs: https://developer.paytmmoney.com/docs/
 """,
 }
 
