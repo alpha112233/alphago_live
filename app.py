@@ -311,6 +311,18 @@ def create_app():
         csrf.exempt(app.view_functions["health_bp.simple_health"])
         csrf.exempt(app.view_functions["health_bp.detailed_health_check"])
 
+        # Exempt distribution system endpoints — bearer-authed server-to-server
+        # calls from hostingsol's provisioner. CSRF tokens are session-scoped
+        # and don't apply to bearer-token calls. Skips quietly if a name is
+        # missing (defensive against the blueprint not being registered yet).
+        for fn_name in (
+            "distribution_bp.system_create_inbox",
+            "distribution_bp.system_set_publisher_subscriber_id",
+            "distribution_bp.pick_strategy_admin",
+        ):
+            if fn_name in app.view_functions:
+                csrf.exempt(app.view_functions[fn_name])
+
         # Initialize latency monitoring (after registering API blueprint)
         init_latency_monitoring(app)
 
