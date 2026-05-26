@@ -68,6 +68,7 @@ MIGRATIONS = [
     ("migrate_leverage.py", "Leverage Configuration for Crypto"),
     ("migrate_samco_auth.py", "Samco 2FA Authentication"),
     ("migrate_zerodha_new_exchanges.py", "Zerodha NCO/GLOBAL_INDEX & GIFTNIFTY Cleanup"),
+    ("migrate_distribution_publisher_link.py", "Distribution Inbox publisher_subscriber_id column"),
 ]
 
 

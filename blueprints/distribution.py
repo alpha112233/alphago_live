@@ -516,3 +516,312 @@ def get_positions_endpoint(inbox_slug: str):
         "data": (response_data or {}).get("data") or [],
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }), 200
+
+
+# ===========================================================================
+# System endpoints — server-to-server (bearer-authed by PROVISIONER_SHARED_SECRET)
+# ===========================================================================
+#
+# These are NOT session-authed. They're called by hostingsol's landing
+# service (or the backfill ops script) to bootstrap a customer's
+# Distribution Inbox at provisioning time, then link it to the publisher's
+# subscriber row. The flow:
+#
+#   hostingsol → POST /api/distribution/system/create-inbox      → returns inbox_id + slug + plaintext_api_key
+#   hostingsol → POST publisher /api/system/subscribers          → returns subscriber_id
+#   hostingsol → POST /api/distribution/system/set-publisher-id  → links inbox_id ↔ subscriber_id
+#
+# Customer never types an api_key. Auth is the shared PROVISIONER_SHARED_SECRET
+# env (one per container, set at provision time).
+
+def _provisioner_authed() -> bool:
+    """Bearer auth gate for system endpoints. Returns False if the env var
+    is unset (hard-disabled) or the presented token doesn't match."""
+    import hmac
+    import os
+
+    expected = (os.getenv("PROVISIONER_SHARED_SECRET") or "").strip()
+    if not expected:
+        return False
+    presented = _extract_bearer_or_apikey_header()
+    return bool(presented) and hmac.compare_digest(presented, expected)
+
+
+def _resolve_admin_user_id() -> int | None:
+    """alphago_live is single-admin-per-instance — find the one admin row."""
+    try:
+        from database.user_db import db_session as user_session, User
+        admin = user_session.query(User).filter_by(is_admin=True).first()
+        return admin.id if admin else None
+    except Exception:
+        logger.exception("admin user lookup failed in system endpoint")
+        return None
+
+
+@distribution_bp.route("/api/distribution/system/create-inbox", methods=["POST"])
+def system_create_inbox():
+    """Server-to-server: create a Distribution Inbox for the admin user.
+
+    Idempotent: if the admin already has at least one inbox, returns the
+    earliest-created one (and reports `created: false`). For freshly
+    provisioned containers it creates one and returns the plaintext api_key.
+
+    Bearer-authed by PROVISIONER_SHARED_SECRET. Returns 503 if that env
+    var is unset (hard-disabled state, by design).
+
+    Body (optional):
+      {
+        "name": "Distribution Inbox",      # default if omitted
+        "broker_override": null,           # default: follow active broker
+        "force_create": false              # if true, always create a new inbox
+                                           # (ignoring any existing one). Used
+                                           # by the rotate-key path; provisioner
+                                           # should leave it false.
+      }
+    """
+    import os
+    if not _provisioner_authed():
+        return jsonify({
+            "status": "error",
+            "message": "system endpoint requires PROVISIONER_SHARED_SECRET bearer token "
+                       "(or env var is unset on this container)",
+        }), 401 if os.getenv("PROVISIONER_SHARED_SECRET") else 503
+
+    admin_id = _resolve_admin_user_id()
+    if admin_id is None:
+        return jsonify({
+            "status": "error",
+            "message": "no admin user exists yet on this container — finish web setup first",
+        }), 503
+
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "Distribution Inbox").strip() or "Distribution Inbox"
+    broker_override = body.get("broker_override") or None
+    force_create = bool(body.get("force_create", False))
+
+    from database.distribution_db import get_first_inbox_for_user
+
+    # Idempotency: if there's already an inbox, reuse it (no plaintext key
+    # is returned — the customer rotates explicitly if they need a fresh one).
+    if not force_create:
+        existing = get_first_inbox_for_user(admin_id)
+        if existing is not None:
+            return jsonify({
+                "status": "success",
+                "created": False,
+                "data": {
+                    "inbox_id": existing.id,
+                    "inbox_slug": existing.inbox_slug,
+                    "api_key_last4": existing.api_key_last4,
+                    "publisher_subscriber_id": existing.publisher_subscriber_id,
+                    "api_key": None,    # plaintext NOT available post-create
+                },
+            })
+
+    try:
+        row, plaintext = create_inbox(
+            user_id=admin_id,
+            name=name,
+            broker_override=broker_override,
+        )
+    except Exception as e:
+        logger.exception("system_create_inbox failed")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    logger.info(
+        f"system create-inbox: admin_id={admin_id} inbox_id={row.id} slug={row.inbox_slug} "
+        f"(server-to-server)"
+    )
+    return jsonify({
+        "status": "success",
+        "created": True,
+        "data": {
+            "inbox_id": row.id,
+            "inbox_slug": row.inbox_slug,
+            "api_key_last4": row.api_key_last4,
+            "publisher_subscriber_id": None,
+            "api_key": plaintext,    # shown ONCE — caller must register with publisher immediately
+        },
+    })
+
+
+@distribution_bp.route("/api/distribution/system/set-publisher-subscriber-id", methods=["POST"])
+def system_set_publisher_subscriber_id():
+    """Link a local inbox to its row on publisher.alphaquark.in. Called by
+    hostingsol's provisioner right after it creates the subscriber row on
+    publisher and learns its id.
+
+    Bearer-authed by PROVISIONER_SHARED_SECRET.
+
+    Body:
+      {
+        "inbox_id": 1,
+        "publisher_subscriber_id": 42
+      }
+    """
+    import os
+    if not _provisioner_authed():
+        return jsonify({"status": "error", "message": "auth required"}), \
+            (401 if os.getenv("PROVISIONER_SHARED_SECRET") else 503)
+
+    body = request.get_json(silent=True) or {}
+    try:
+        inbox_id = int(body.get("inbox_id") or 0)
+        sub_id = int(body.get("publisher_subscriber_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "inbox_id and publisher_subscriber_id required (int)"}), 400
+    if not inbox_id or not sub_id:
+        return jsonify({"status": "error", "message": "inbox_id and publisher_subscriber_id required (int)"}), 400
+
+    from database.distribution_db import set_publisher_subscriber_id as _set
+    if not _set(inbox_id, sub_id):
+        return jsonify({"status": "error", "message": "inbox not found"}), 404
+    return jsonify({"status": "success"})
+
+
+@distribution_bp.route("/api/distribution/system/inbox-info", methods=["GET"])
+def system_inbox_info():
+    """Returns existing inbox metadata for the admin user. Used by the
+    backfill script to discover which existing customers don't yet have
+    a publisher_subscriber_id set, so it can register them.
+    Bearer-authed by PROVISIONER_SHARED_SECRET."""
+    import os
+    if not _provisioner_authed():
+        return jsonify({"status": "error", "message": "auth required"}), \
+            (401 if os.getenv("PROVISIONER_SHARED_SECRET") else 503)
+
+    admin_id = _resolve_admin_user_id()
+    if admin_id is None:
+        return jsonify({"status": "success", "data": []})
+    return jsonify({"status": "success", "data": list_inboxes(admin_id)})
+
+
+# ===========================================================================
+# Customer-facing picker endpoints (Flask session auth)
+# ===========================================================================
+#
+# The customer's dashboard uses these to fetch the list of strategy authors
+# (admins on publisher.alphaquark.in) and self-pick which one they want
+# their signals dispatched from.
+
+@distribution_bp.route("/api/distribution/admins/list", methods=["GET"])
+def list_strategy_admins():
+    """Proxy to publisher's /api/system/admins/list-public.
+
+    The bearer secret + publisher URL are container-side env vars set at
+    provisioning time:
+      PUBLISHER_BASE_URL          (e.g. https://publisher.alphaquark.in)
+      PUBLISHER_SHARED_SECRET     (the same value as HOSTINGSOL_SHARED_SECRET
+                                    on the publisher side)
+    """
+    import os
+    if _current_user_id() is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    publisher_base = (os.getenv("PUBLISHER_BASE_URL") or "").rstrip("/")
+    secret = (os.getenv("PUBLISHER_SHARED_SECRET") or "").strip()
+    if not publisher_base or not secret:
+        # Soft-fail: empty list. Lets the UI render without crashing on
+        # containers that aren't part of the hostingsol fleet.
+        return jsonify({
+            "status": "success",
+            "data": [],
+            "_note": "PUBLISHER_BASE_URL / PUBLISHER_SHARED_SECRET not configured",
+        })
+
+    try:
+        import requests
+        resp = requests.get(
+            f"{publisher_base}/api/system/admins/list-public",
+            headers={"Authorization": f"Bearer {secret}"},
+            timeout=10,
+        )
+        body = resp.json()
+        if resp.status_code != 200 or body.get("status") != "success":
+            logger.warning(f"publisher list-public returned {resp.status_code}: {body}")
+            return jsonify({"status": "error", "message": body.get("message") or "publisher error"}), 502
+        return jsonify({"status": "success", "data": body.get("data") or []})
+    except Exception as e:
+        logger.exception("list_strategy_admins failed")
+        return jsonify({"status": "error", "message": f"publisher unreachable: {e}"}), 502
+
+
+@distribution_bp.route("/api/distribution/inboxes/<int:inbox_id>/pick-admin", methods=["POST"])
+def pick_strategy_admin(inbox_id: int):
+    """Customer picks a Strategy Provider for this inbox. We forward the
+    pick to publisher's /api/system/subscribers/<sub_id>/reassign-by-customer
+    using the inbox's API key as the proof of ownership.
+
+    Body:
+      {
+        "target_admin_id": 17,
+        "api_key": "<the plaintext bearer key the customer kept from inbox
+                     creation — surfaced once at inbox-create time>"
+      }
+    """
+    import os
+    user_id = _current_user_id()
+    if user_id is None:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    body = request.get_json(silent=True) or {}
+    try:
+        target_admin_id = int(body.get("target_admin_id") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "target_admin_id must be int"}), 400
+    if not target_admin_id:
+        return jsonify({"status": "error", "message": "target_admin_id required"}), 400
+
+    api_key = (body.get("api_key") or "").strip()
+    if not api_key:
+        return jsonify({
+            "status": "error",
+            "message": "api_key required — the plaintext bearer key shown when the inbox was created. "
+                       "If you've lost it, rotate the key (Distribution Inbox → Rotate) and try again.",
+        }), 400
+
+    # Verify the customer actually owns this inbox + key.
+    from database.distribution_db import check_api_key
+    from database.distribution_db import db_session as dist_session, DistributionInbox
+    inbox = (dist_session.query(DistributionInbox)
+             .filter_by(id=inbox_id, user_id=user_id).first())
+    if inbox is None:
+        return jsonify({"status": "error", "message": "inbox not found"}), 404
+    if not check_api_key(inbox, api_key):
+        return jsonify({"status": "error", "message": "api_key does not match this inbox"}), 401
+    if inbox.publisher_subscriber_id is None:
+        return jsonify({
+            "status": "error",
+            "message": "this inbox is not registered with the upstream publisher yet — "
+                       "ask the operator to run the backfill script or re-trigger provisioning.",
+        }), 409
+
+    publisher_base = (os.getenv("PUBLISHER_BASE_URL") or "").rstrip("/")
+    if not publisher_base:
+        return jsonify({
+            "status": "error",
+            "message": "PUBLISHER_BASE_URL not configured on this container",
+        }), 503
+
+    try:
+        import requests
+        resp = requests.post(
+            f"{publisher_base}/api/system/subscribers/{inbox.publisher_subscriber_id}/reassign-by-customer",
+            json={"api_key": api_key, "target_admin_id": target_admin_id},
+            timeout=10,
+        )
+        out = resp.json()
+        if resp.status_code != 200 or out.get("status") != "success":
+            logger.warning(f"publisher reassign returned {resp.status_code}: {out}")
+            return jsonify({
+                "status": "error",
+                "message": out.get("message") or "publisher rejected the pick",
+            }), resp.status_code if resp.status_code >= 400 else 502
+        logger.info(
+            f"customer picked admin: inbox_id={inbox_id} publisher_sub_id={inbox.publisher_subscriber_id} "
+            f"target_admin_id={target_admin_id}"
+        )
+        return jsonify({"status": "success", "data": out.get("data")})
+    except Exception as e:
+        logger.exception("pick_strategy_admin failed")
+        return jsonify({"status": "error", "message": f"publisher unreachable: {e}"}), 502

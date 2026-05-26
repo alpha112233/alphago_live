@@ -99,6 +99,13 @@ class DistributionInbox(Base):
     last_signal_status = Column(String(40), nullable=True)
     last_signal_summary = Column(String(500), nullable=True)
     signal_count_total = Column(Integer, default=0, nullable=False)
+    # When this inbox was auto-registered with the upstream publisher
+    # (publisher.alphaquark.in), this is the publisher's subscriber row id.
+    # Used by the customer's "Choose your Strategy Provider" picker — we
+    # need to know which publisher-side row to ask reassign on. Nullable
+    # because legacy inboxes were created without auto-registration; the
+    # backfill ops script populates this for them lazily.
+    publisher_subscriber_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -299,9 +306,55 @@ def _to_public_dict(r: DistributionInbox) -> dict:
         "last_signal_status": r.last_signal_status,
         "last_signal_summary": r.last_signal_summary,
         "signal_count_total": r.signal_count_total,
+        "publisher_subscriber_id": getattr(r, "publisher_subscriber_id", None),
         "created_at": r.created_at.isoformat(),
         "updated_at": r.updated_at.isoformat(),
     }
+
+
+def get_first_inbox_for_user(user_id: int) -> DistributionInbox | None:
+    """Return the user's earliest-created inbox, or None."""
+    return (
+        db_session.query(DistributionInbox)
+        .filter_by(user_id=user_id)
+        .order_by(DistributionInbox.created_at.asc())
+        .first()
+    )
+
+
+def set_publisher_subscriber_id(inbox_id: int, publisher_subscriber_id: int) -> bool:
+    """Link this local inbox to its row on the upstream publisher. Idempotent.
+
+    Returns True if the row was found and updated (or already had the same
+    value), False if the inbox doesn't exist.
+    """
+    row = db_session.query(DistributionInbox).filter_by(id=inbox_id).first()
+    if row is None:
+        return False
+    if row.publisher_subscriber_id == publisher_subscriber_id:
+        return True
+    row.publisher_subscriber_id = int(publisher_subscriber_id)
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    logger.info(
+        f"inbox publisher link set: inbox_id={inbox_id} "
+        f"publisher_subscriber_id={publisher_subscriber_id}"
+    )
+    return True
+
+
+def get_inbox_plaintext_api_key_via_db(inbox_id: int) -> str | None:
+    """We never store the plaintext key — by design. This function exists
+    so the "pick admin" flow can fail loudly when called: the customer's
+    own dashboard knows the plaintext key only at create/rotate time. The
+    picker UI receives the plaintext key as a URL fragment / one-time
+    session item; backend never persists it. Keeping this as an explicit
+    "intentionally returns None" so future readers don't try to wire
+    something here."""
+    return None
 
 
 def get_inbox_by_slug(slug: str) -> DistributionInbox | None:
