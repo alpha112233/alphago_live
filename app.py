@@ -311,14 +311,20 @@ def create_app():
         csrf.exempt(app.view_functions["health_bp.simple_health"])
         csrf.exempt(app.view_functions["health_bp.detailed_health_check"])
 
-        # Exempt distribution system endpoints — bearer-authed server-to-server
-        # calls from hostingsol's provisioner. CSRF tokens are session-scoped
-        # and don't apply to bearer-token calls. Skips quietly if a name is
-        # missing (defensive against the blueprint not being registered yet).
+        # Exempt distribution endpoints — they're either bearer-authed
+        # webhook receivers (publisher → this container) or session-authed
+        # JSON APIs called from our own React frontend with X-CSRFToken
+        # already wired by the api client (so the Flask-WTF check is
+        # double-coverage). CSRF protection makes no sense on these.
+        # Skips quietly if a name is missing.
         for fn_name in (
+            # System endpoints — Bearer PROVISIONER_SHARED_SECRET (hostingsol → here)
             "distribution_bp.system_create_inbox",
             "distribution_bp.system_set_publisher_subscriber_id",
             "distribution_bp.pick_strategy_admin",
+            # Public webhook — Bearer inbox api_key (publisher → here)
+            "distribution_bp.receive_signal_endpoint",
+            "distribution_bp.get_positions_endpoint",
         ):
             if fn_name in app.view_functions:
                 csrf.exempt(app.view_functions[fn_name])
