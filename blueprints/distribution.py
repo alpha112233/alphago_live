@@ -439,7 +439,15 @@ def receive_signal_endpoint(inbox_slug: str):
         return jsonify({"status": "error", "message": err}), 503
 
     # 7. Place the order via OpenAlgo's existing service.
+    # NOTE: `apikey` is a REQUIRED_ORDER_FIELDS entry that validate_order_data
+    # checks for *presence* only. This is an INTERNAL call — we pass
+    # auth_token + broker directly to place_order(), so the OpenAlgo API key
+    # isn't used for auth here and place_order pops it before hitting the
+    # broker. But the validator still requires the field to exist, so we
+    # inject a sentinel. (Without this every distribution signal failed with
+    # "Missing mandatory field(s): apikey" — found during the R3 canary.)
     order_data = {
+        "apikey": "distribution-internal",
         "strategy": f"distribution:{inbox.name}",
         "symbol": str(body["symbol"]).strip().upper(),
         "exchange": str(body["exchange"]).strip().upper(),
