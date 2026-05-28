@@ -48,6 +48,26 @@ ADAPTERS = {
     "indmoney": indmoney_login,
 }
 
+# Adapters that exist in skeleton form but are NOT yet validated against a
+# real broker login flow. DELIBERATELY kept out of ADAPTERS so the daily
+# auto-login scheduler never calls them — a speculative/wrong login flow
+# fired on a schedule risks locking out a real customer account.
+#
+# Each of these has a hard guard in its login() that returns _fail with a
+# clear message. Promote a broker from here into ADAPTERS only after its
+# in-module "Validation checklist" is complete (capture the real flow,
+# replace ASSUMED_* constants, confirm a real round-trip). See:
+#   broker_login_adapters/{icicidirect,hdfcsec,arihant}.py
+from .arihant import login as arihant_login
+from .hdfcsec import login as hdfcsec_login
+from .icicidirect import login as icicidirect_login
+
+_UNVERIFIED_ADAPTERS = {
+    "icicidirect": icicidirect_login,
+    "hdfcsec": hdfcsec_login,
+    "arihant": arihant_login,
+}
+
 # Optional cheap pre-save validators. Each returns {ok, error}. Used by
 # /api/broker/credentials/save to catch obvious config errors at save time
 # instead of letting the user discover them only at auto-login time.
