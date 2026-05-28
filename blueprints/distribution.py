@@ -128,8 +128,20 @@ def _resolve_routing_broker(user_id: int, broker_override: str | None) -> tuple[
     Lookup strategy:
       1. If the inbox has broker_override: require auth_db to have a valid
          row for that broker and use it. If not, fail with a clear message.
-      2. Else: fall back to whatever broker the user last successfully
-         authed (auth_db.filter_by(name=username) — the active broker).
+      2. Else: use the broker the customer has marked ACTIVE in
+         broker_creds_db (their explicit intent), and fetch THAT broker's
+         auth-token row. Only if broker_creds has no active broker do we
+         fall back to "whatever auth row exists".
+
+    Why (2) cross-checks broker_creds_db (fix 2026-05-27, bug #58):
+      The `auth` table can hold rows for several brokers (a customer who
+      tried Upstox, then switched to Dhan, leaves an Upstox auth row
+      behind). `Auth.query.filter_by(name=username).first()` picked an
+      arbitrary one — often NOT the broker the customer currently has
+      active — so signals routed to a stale broker whose env vars no
+      longer matched ("Missing mandatory field(s): apikey"). Honoring
+      broker_creds_db.status='active' makes routing deterministic and
+      consistent with what broker_env_bootstrap set the env vars to.
     """
     from database.user_db import db_session as user_session, User
     user = user_session.query(User).filter_by(id=user_id).first()
@@ -137,22 +149,51 @@ def _resolve_routing_broker(user_id: int, broker_override: str | None) -> tuple[
         return None, None, "user not found"
 
     from database.auth_db import Auth, decrypt_token
-    if broker_override:
-        row = Auth.query.filter_by(name=user.username, broker=broker_override).first()
+
+    def _token_for(broker_name: str):
+        row = Auth.query.filter_by(name=user.username, broker=broker_name).first()
         if not row or row.is_revoked:
+            return None, None
+        return row, decrypt_token(row.auth)
+
+    if broker_override:
+        row, token = _token_for(broker_override)
+        if row is None:
             return broker_override, None, (
                 f"Inbox is pinned to broker '{broker_override}', but no active "
                 f"session for that broker. Open Manage Brokers in the dashboard "
                 f"and either run Auto Login for {broker_override}, or change the "
                 f"inbox's broker override."
             )
-        token = decrypt_token(row.auth)
         if not token:
             return broker_override, None, f"failed to decrypt auth token for '{broker_override}'"
         return broker_override, token, None
 
-    row = Auth.query.filter_by(name=user.username).first()
-    if not row or row.is_revoked:
+    # No override: prefer the customer's explicitly-active broker.
+    active_broker = None
+    try:
+        from database.broker_creds_db import get_active_broker
+        active_broker = get_active_broker(user_id)
+    except Exception:
+        logger.exception("get_active_broker lookup failed; falling back to auth-table broker")
+
+    if active_broker:
+        row, token = _token_for(active_broker)
+        if row is None:
+            return active_broker, None, (
+                f"Your active broker is '{active_broker}' but it has no valid "
+                f"session. Open Manage Brokers and complete login / Auto Login "
+                f"for {active_broker} before sending signals. (If you meant to "
+                f"use a different broker, activate it in Manage Brokers.)"
+            )
+        if not token:
+            return active_broker, None, f"failed to decrypt auth token for '{active_broker}'"
+        return active_broker, token, None
+
+    # Legacy fallback: broker_creds_db has no active broker (e.g. a very old
+    # single-broker setup). Use whatever auth row exists.
+    row = Auth.query.filter_by(name=user.username, is_revoked=False).first()
+    if not row:
         return None, None, (
             "No active broker session. Open Manage Brokers in the dashboard "
             "and complete login for one broker before sending signals."
