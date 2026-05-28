@@ -181,20 +181,52 @@ def _create_http_client() -> httpx.Client:
         # Disable HTTP/2 in standalone/Docker environments to avoid protocol negotiation issues
         http2_enabled = not is_standalone
 
-        client = httpx.Client(
-            http2=http2_enabled,  # Disable HTTP/2 in standalone mode, enable in integrated mode
-            http1=True,  # Always enable HTTP/1.1 for compatibility
+        _limits = httpx.Limits(
+            max_keepalive_connections=40,  # Increased from 20 for multi-strategy environments
+            max_connections=100,  # Increased from 50 for 10+ concurrent strategies
+            keepalive_expiry=30.0,  # Reduced from 120s to recycle stale connections faster
+        )
+
+        # Per-customer egress binding. utils/source_bind.py monkeypatches
+        # urllib3 to bind CLIENT_IPV6 — but httpx uses httpcore, NOT urllib3,
+        # so that patch does NOT apply here. Without an explicit
+        # local_address, httpx egresses via the OS default route (the shared
+        # host IPv6), which breaks the per-customer /128 IP-whitelist model
+        # every hostingsol broker relies on. Symptom: Dhan DH-905 "Invalid IP"
+        # because the order left from the host IP, not the customer's
+        # whitelisted /128. (Found via the R3 canary 2026-05-28.)
+        #
+        # Bind via a custom transport when CLIENT_IPV6 is set. When unset
+        # (local dev / single-host operator), fall back to the default
+        # transport so behaviour is unchanged.
+        client_ipv6 = (os.environ.get("CLIENT_IPV6") or "").strip()
+
+        common_kwargs = dict(
             timeout=120.0,  # Increased timeout for large historical data requests
-            limits=httpx.Limits(
-                max_keepalive_connections=40,  # Increased from 20 for multi-strategy environments
-                max_connections=100,  # Increased from 50 for 10+ concurrent strategies
-                keepalive_expiry=30.0,  # Reduced from 120s to recycle stale connections faster
-            ),
-            # Add verify parameter to handle SSL/TLS issues in standalone mode
-            verify=True,  # Can be set to False for debugging SSL issues (not recommended for production)
-            # Add event hooks for latency tracking
             event_hooks={"request": [log_request], "response": [log_response]},
         )
+
+        if client_ipv6:
+            client = httpx.Client(
+                transport=httpx.HTTPTransport(
+                    local_address=client_ipv6,
+                    http2=http2_enabled,
+                    http1=True,
+                    limits=_limits,
+                    verify=True,
+                    retries=0,
+                ),
+                **common_kwargs,
+            )
+            logger.info(f"httpx client bound to CLIENT_IPV6={client_ipv6} (per-customer egress)")
+        else:
+            client = httpx.Client(
+                http2=http2_enabled,
+                http1=True,
+                limits=_limits,
+                verify=True,
+                **common_kwargs,
+            )
 
         if is_standalone:
             logger.info("Running in standalone mode - HTTP/2 disabled for compatibility")
