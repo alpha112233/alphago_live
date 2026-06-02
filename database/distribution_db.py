@@ -384,6 +384,34 @@ def find_signal(inbox_id: int, signal_id: str) -> DistributionSignal | None:
     )
 
 
+def update_signal_status(
+    inbox_id: int,
+    signal_id: str,
+    new_status: str,
+    error_message: str | None = None,
+) -> bool:
+    """Update an existing signal row's status — used by modify / cancel
+    flows to mark a previously-placed signal as `modified` / `cancelled`
+    after a successful broker round-trip. Returns True if a row was
+    updated, False if no signal existed for this (inbox, signal_id)."""
+    row = (
+        db_session.query(DistributionSignal)
+        .filter_by(inbox_id=inbox_id, signal_id=signal_id)
+        .first()
+    )
+    if row is None:
+        return False
+    row.status = new_status
+    if error_message is not None:
+        row.error_message = error_message[:500] or None
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    return True
+
+
 def record_signal(
     inbox_id: int,
     signal_id: str,

@@ -31,6 +31,7 @@ Webhook payload shape (publisher → subscriber):
 from __future__ import annotations
 
 import ipaddress
+import json
 import logging
 from typing import Any
 
@@ -47,6 +48,7 @@ from database.distribution_db import (
     record_signal,
     rotate_api_key,
     update_inbox,
+    update_signal_status,
 )
 
 logger = logging.getLogger(__name__)
@@ -499,6 +501,286 @@ def receive_signal_endpoint(inbox_slug: str):
         "status": "success",
         "broker": broker,
         "broker_order_id": broker_order_id,
+        "response": response_data,
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# Modify / Cancel by signal_id (Phase 1)
+# ---------------------------------------------------------------------------
+#
+# Both endpoints look up the ORIGINAL placed signal by (inbox_id, signal_id),
+# extract the broker + broker_order_id, then call the broker-direct service
+# (modify_order_with_auth / cancel_order_with_auth) to round-trip the change.
+#
+# Routing rule: modify/cancel MUST target the broker the original order was
+# placed on (stored in distribution_signals.broker_used) — NOT the customer's
+# currently-active broker. If the customer has since switched brokers, we
+# only succeed if the old broker's auth row still has a valid token. Otherwise
+# we fail with a clear message telling them to log in to that broker.
+
+
+def _token_for_specific_broker(user_id: int, broker_name: str) -> tuple[str | None, str | None]:
+    """Fetch the auth_token for a SPECIFIC broker (not the active one).
+
+    Returns (auth_token, error_message). Used for modify / cancel where we
+    must hit the same broker that placed the original — switching brokers
+    in the meantime doesn't move the order, so we have to reach the broker
+    that owns it.
+    """
+    from database.user_db import db_session as user_session, User
+    from database.auth_db import Auth, decrypt_token
+
+    user = user_session.query(User).filter_by(id=user_id).first()
+    if user is None:
+        return None, "user not found"
+
+    row = Auth.query.filter_by(name=user.username, broker=broker_name).first()
+    if not row or row.is_revoked:
+        return None, (
+            f"No active session for '{broker_name}' (the broker the original "
+            f"order was placed on). Open Manage Brokers and log in to "
+            f"{broker_name} — modify/cancel must hit the broker that owns the "
+            f"order, even if your active broker has since changed."
+        )
+    token = decrypt_token(row.auth)
+    if not token:
+        return None, f"failed to decrypt auth token for '{broker_name}'"
+    return token, None
+
+
+def _lookup_original_for_modify_or_cancel(inbox_id: int, signal_id: str):
+    """Find the original placed signal that modify/cancel target. Returns
+    (signal_row, error_message, http_status). On success error_message+status
+    are None; the row is guaranteed to have broker_used + broker_order_id."""
+    prior = find_signal(inbox_id, signal_id)
+    if prior is None:
+        return None, f"no signal found with signal_id='{signal_id}' for this inbox", 404
+    if prior.status != "placed":
+        return None, (
+            f"signal '{signal_id}' has status '{prior.status}' — only signals "
+            f"in status 'placed' can be modified or cancelled"
+        ), 409
+    if not prior.broker_order_id or not prior.broker_used:
+        return None, (
+            f"signal '{signal_id}' is missing broker_order_id or broker_used — "
+            f"cannot route modify/cancel (was this signal placed before "
+            f"order-id tracking landed?)"
+        ), 409
+    return prior, None, None
+
+
+@distribution_bp.route("/distribution/inbox/<inbox_slug>/modify", methods=["POST"])
+def modify_signal_endpoint(inbox_slug: str):
+    """Modify an existing placed order by signal_id.
+
+    Body:
+      {
+        "signal_id":     "<original signal_id>",   # required — locates the order
+        "quantity":      150,                        # optional, any subset
+        "price":         1455.50,                    # optional
+        "trigger_price": 1450.00                     # optional (SL/SL-M)
+      }
+
+    Auth, IP allowlist, inbox lookup are identical to receive_signal_endpoint.
+    Returns the broker's modify response on success; the original signal row
+    is left at status='placed' (the order_id stays valid post-modify) and a
+    'modified' audit-status note is appended to its error_message column.
+    """
+    src_ip = _real_source_ip()
+
+    inbox = get_inbox_by_slug(inbox_slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox"}), 404
+    if inbox.status != "active":
+        return jsonify({"status": "error", "message": "inbox disabled"}), 403
+
+    presented_key = _extract_bearer_or_apikey_header()
+    if not check_api_key(inbox, presented_key):
+        return jsonify({
+            "status": "error",
+            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
+        }), 401
+
+    if not _ip_is_allowed(src_ip, inbox.allowed_ips):
+        return jsonify({
+            "status": "error",
+            "message": f"source IP {src_ip} not in this inbox's allowlist",
+        }), 403
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "message": "request body must be JSON object"}), 400
+
+    signal_id = str(body.get("signal_id") or "")[:160]
+    if not signal_id:
+        return jsonify({"status": "error", "message": "signal_id is required"}), 400
+
+    prior, err, code = _lookup_original_for_modify_or_cancel(inbox.id, signal_id)
+    if err is not None:
+        return jsonify({"status": "error", "message": err}), code
+
+    # At least one of these MUST be present — otherwise there's nothing to modify.
+    has_qty = body.get("quantity") is not None
+    has_price = body.get("price") is not None
+    has_trigger = body.get("trigger_price") is not None
+    if not (has_qty or has_price or has_trigger):
+        return jsonify({
+            "status": "error",
+            "message": "provide at least one of quantity, price, trigger_price",
+        }), 400
+
+    # Fetch the token for the SAME broker that placed the original — see
+    # the module-level note above on why active-broker isn't right here.
+    broker = prior.broker_used
+    auth_token, terr = _token_for_specific_broker(inbox.user_id, broker)
+    if terr is not None:
+        return jsonify({"status": "error", "broker": broker, "message": terr}), 503
+
+    # Reconstruct order_data from the original payload + apply the deltas.
+    try:
+        original_payload = json.loads(prior.payload_json) if prior.payload_json else {}
+    except Exception:
+        original_payload = {}
+
+    order_data = {
+        "apikey": "distribution-internal",
+        "strategy": f"distribution:{inbox.name}",
+        "orderid": prior.broker_order_id,
+        "symbol": str(original_payload.get("symbol", "")).strip().upper(),
+        "exchange": str(original_payload.get("exchange", "")).strip().upper(),
+        "action": str(original_payload.get("action", "")).strip().upper(),
+        "product": str(original_payload.get("product") or _DEFAULT_PRODUCT).strip().upper(),
+        "pricetype": str(original_payload.get("pricetype") or _DEFAULT_PRICETYPE).strip().upper(),
+        "quantity": str(int(body["quantity"]) if has_qty else original_payload.get("quantity") or 0),
+        "price": str(body["price"] if has_price else original_payload.get("price") or 0),
+        "trigger_price": str(body["trigger_price"] if has_trigger else original_payload.get("trigger_price") or 0),
+        "disclosed_quantity": str(original_payload.get("disclosed_quantity") or 0),
+    }
+
+    try:
+        from services.modify_order_service import modify_order_with_auth
+        success, response_data, http_status = modify_order_with_auth(
+            order_data=order_data,
+            auth_token=auth_token,
+            broker=broker,
+            original_data=order_data,
+        )
+    except Exception as e:
+        logger.exception("modify_order_with_auth raised")
+        return jsonify({"status": "error", "broker": broker, "message": str(e)}), 500
+
+    if not success:
+        err_msg = (response_data or {}).get("message", "unknown modify error")
+        # Don't change the original signal's status — order is still placed,
+        # just the modify didn't apply. Surface the error in audit message.
+        update_signal_status(
+            inbox.id, signal_id, "placed",
+            error_message=f"last modify failed: {err_msg}",
+        )
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "broker_order_id": prior.broker_order_id,
+            "message": err_msg,
+            "response": response_data,
+        }), http_status or 502
+
+    update_signal_status(
+        inbox.id, signal_id, "placed",
+        error_message=(
+            "modified: " + ", ".join(
+                f"{k}={body[k]}" for k in ("quantity", "price", "trigger_price")
+                if body.get(k) is not None
+            )
+        ),
+    )
+    return jsonify({
+        "status": "success",
+        "broker": broker,
+        "broker_order_id": prior.broker_order_id,
+        "response": response_data,
+    }), 200
+
+
+@distribution_bp.route("/distribution/inbox/<inbox_slug>/cancel", methods=["POST"])
+def cancel_signal_endpoint(inbox_slug: str):
+    """Cancel an existing placed order by signal_id.
+
+    Body: {"signal_id": "<original signal_id>"}
+
+    Auth, IP allowlist, inbox lookup identical to receive_signal_endpoint.
+    On broker-side success the original signal row flips to status='cancelled'.
+    """
+    src_ip = _real_source_ip()
+
+    inbox = get_inbox_by_slug(inbox_slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox"}), 404
+    if inbox.status != "active":
+        return jsonify({"status": "error", "message": "inbox disabled"}), 403
+
+    presented_key = _extract_bearer_or_apikey_header()
+    if not check_api_key(inbox, presented_key):
+        return jsonify({
+            "status": "error",
+            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
+        }), 401
+
+    if not _ip_is_allowed(src_ip, inbox.allowed_ips):
+        return jsonify({
+            "status": "error",
+            "message": f"source IP {src_ip} not in this inbox's allowlist",
+        }), 403
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "message": "request body must be JSON object"}), 400
+
+    signal_id = str(body.get("signal_id") or "")[:160]
+    if not signal_id:
+        return jsonify({"status": "error", "message": "signal_id is required"}), 400
+
+    prior, err, code = _lookup_original_for_modify_or_cancel(inbox.id, signal_id)
+    if err is not None:
+        return jsonify({"status": "error", "message": err}), code
+
+    broker = prior.broker_used
+    auth_token, terr = _token_for_specific_broker(inbox.user_id, broker)
+    if terr is not None:
+        return jsonify({"status": "error", "broker": broker, "message": terr}), 503
+
+    try:
+        from services.cancel_order_service import cancel_order_with_auth
+        success, response_data, http_status = cancel_order_with_auth(
+            orderid=prior.broker_order_id,
+            auth_token=auth_token,
+            broker=broker,
+            original_data={"orderid": prior.broker_order_id, "apikey": "distribution-internal"},
+        )
+    except Exception as e:
+        logger.exception("cancel_order_with_auth raised")
+        return jsonify({"status": "error", "broker": broker, "message": str(e)}), 500
+
+    if not success:
+        err_msg = (response_data or {}).get("message", "unknown cancel error")
+        update_signal_status(
+            inbox.id, signal_id, "placed",
+            error_message=f"last cancel failed: {err_msg}",
+        )
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "broker_order_id": prior.broker_order_id,
+            "message": err_msg,
+            "response": response_data,
+        }), http_status or 502
+
+    update_signal_status(inbox.id, signal_id, "cancelled", error_message=None)
+    return jsonify({
+        "status": "success",
+        "broker": broker,
+        "broker_order_id": prior.broker_order_id,
         "response": response_data,
     }), 200
 
