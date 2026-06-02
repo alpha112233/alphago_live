@@ -46,6 +46,7 @@ from typing import Optional
 from sqlalchemy import (
     Column,
     DateTime,
+    Float,
     Integer,
     String,
     Text,
@@ -124,10 +125,19 @@ class DistributionSignal(Base):
     src_ip = Column(String(64), nullable=True)
     payload_json = Column(Text, nullable=False)
     # "placed" | "duplicate" | "failed" | "invalid" | "ip_blocked" | "disabled"
+    # | "cancelled" (set by /cancel webhook)
     status = Column(String(40), nullable=False)
     broker_used = Column(String(40), nullable=True)
     broker_order_id = Column(String(120), nullable=True)
     error_message = Column(String(500), nullable=True)
+    # Post-placement fill visibility. Updated by the orderbook poller
+    # (services/fill_poller.py) every POLL_INTERVAL_SECONDS during market
+    # hours. Normalised values: complete | open | cancelled | rejected |
+    # trigger pending | partial. NULL = poller hasn't seen this signal yet.
+    fill_status = Column(String(30), nullable=True)
+    filled_quantity = Column(Integer, nullable=True)
+    average_price = Column(Float, nullable=True)
+    last_polled_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("inbox_id", "signal_id", name="uix_inbox_signal"),
@@ -137,7 +147,40 @@ class DistributionSignal(Base):
 def init_db():
     """Create distribution tables. Idempotent. Called from app.py at startup."""
     Base.metadata.create_all(bind=engine)
+    _migrate_add_columns_if_missing()
     logger.info("distribution tables initialized")
+
+
+def _migrate_add_columns_if_missing() -> None:
+    """ADD COLUMN IF NOT EXISTS for columns appended after first deploy.
+    create_all only creates NEW tables — pre-existing tables need explicit
+    ALTERs. Idempotent; safe to run on every start."""
+    from sqlalchemy import inspect as sqla_inspect, text
+    insp = sqla_inspect(engine)
+    if "distribution_signals" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("distribution_signals")}
+    with engine.begin() as conn:
+        if "fill_status" not in cols:
+            conn.execute(text(
+                "ALTER TABLE distribution_signals ADD COLUMN fill_status VARCHAR(30) NULL"
+            ))
+            logger.info("migration: added distribution_signals.fill_status")
+        if "filled_quantity" not in cols:
+            conn.execute(text(
+                "ALTER TABLE distribution_signals ADD COLUMN filled_quantity INTEGER NULL"
+            ))
+            logger.info("migration: added distribution_signals.filled_quantity")
+        if "average_price" not in cols:
+            conn.execute(text(
+                "ALTER TABLE distribution_signals ADD COLUMN average_price FLOAT NULL"
+            ))
+            logger.info("migration: added distribution_signals.average_price")
+        if "last_polled_at" not in cols:
+            conn.execute(text(
+                "ALTER TABLE distribution_signals ADD COLUMN last_polled_at DATETIME NULL"
+            ))
+            logger.info("migration: added distribution_signals.last_polled_at")
 
 
 # ---- key generation + hashing ----------------------------------------------

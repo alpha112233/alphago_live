@@ -337,6 +337,16 @@ def create_app():
         # Initialize health monitoring (background daemon thread)
         init_health_monitoring(app)
 
+        # Distribution fill-status poller (daemon thread). Polls broker
+        # orderbook every 30s during market hours, updates local
+        # distribution_signals + pushes deltas to the publisher. Closes the
+        # post-placement fill-visibility gap. Disabled if FILL_POLL_ENABLED=0.
+        try:
+            from services.fill_poller import start_fill_poller
+            start_fill_poller(app)
+        except Exception:
+            logger.exception("fill_poller: failed to start — continuing")
+
         # NOTE: Python strategy scheduler is initialized in setup_environment()
         # AFTER database tables are created, to avoid "no such table" errors on fresh install
 
