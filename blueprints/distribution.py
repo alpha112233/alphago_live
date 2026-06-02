@@ -349,6 +349,205 @@ _DEFAULT_PRODUCT = "MIS"
 _DEFAULT_PRICETYPE = "MARKET"
 
 
+# ---- bracket / cover helpers (Phase 3, synthetic-only V1) -------------------
+
+# Child signal_ids derive from the parent via a fixed suffix. Cancel
+# cascade queries by `parent__sl` / `parent__tp` prefix. The double
+# underscore is unlikely to appear in publisher-generated UUIDs.
+_BRACKET_CHILD_SUFFIXES = ("__sl", "__tp")
+
+
+def _opposite_action(action: str) -> str:
+    return "SELL" if action.upper() == "BUY" else "BUY"
+
+
+def _place_one_via_distribution(
+    *, inbox, signal_id: str, src_ip: str,
+    payload_for_audit: dict, order_data: dict,
+    auth_token: str, broker: str,
+) -> tuple[bool, str | None, dict | None, str | None]:
+    """Run one parent or child order through the same placement chain the
+    main receive endpoint uses. Returns (success, broker_order_id, response_data,
+    error_message). Records the signal row regardless."""
+    from services.place_order_service import place_order
+    try:
+        success, response_data, _http_status = place_order(
+            order_data=order_data,
+            auth_token=auth_token,
+            broker=broker,
+            emit_event=True,
+        )
+    except Exception as e:
+        logger.exception("place_order raised in bracket helper")
+        record_signal(
+            inbox_id=inbox.id, signal_id=signal_id, src_ip=src_ip,
+            payload=payload_for_audit, status="failed", broker_used=broker,
+            error_message=f"place_order exception: {e}",
+        )
+        return False, None, None, str(e)
+
+    if not success:
+        err_msg = (response_data or {}).get("message", "unknown placement error")
+        record_signal(
+            inbox_id=inbox.id, signal_id=signal_id, src_ip=src_ip,
+            payload=payload_for_audit, status="failed", broker_used=broker,
+            error_message=err_msg,
+        )
+        return False, None, response_data, err_msg
+
+    broker_order_id = (
+        (response_data or {}).get("orderid") or (response_data or {}).get("order_id")
+    )
+    record_signal(
+        inbox_id=inbox.id, signal_id=signal_id, src_ip=src_ip,
+        payload=payload_for_audit, status="placed", broker_used=broker,
+        broker_order_id=broker_order_id,
+    )
+    return True, broker_order_id, response_data, None
+
+
+def _normalise_bracket_block(block) -> tuple[dict | None, str | None]:
+    """Validate the 'bracket' payload field. Returns (normalised_dict, error_message).
+    Either both values are None (not provided) or normalised_dict is set.
+
+    Expected shape:
+      {
+        "sl_trigger_price": 1450,   # required when bracket is present
+        "sl_price": 1448,           # optional — if set child SL = SL-Limit; else SL-Market
+        "tp_price": 1500            # optional — if set, also place LIMIT TP child
+      }
+    """
+    if block is None:
+        return None, None
+    if not isinstance(block, dict):
+        return None, "bracket must be an object"
+    try:
+        sl_trigger = float(block.get("sl_trigger_price") or 0)
+    except (TypeError, ValueError):
+        return None, "bracket.sl_trigger_price must be numeric"
+    if sl_trigger <= 0:
+        return None, "bracket.sl_trigger_price is required (> 0)"
+    try:
+        sl_price = float(block.get("sl_price") or 0)
+        tp_price = float(block.get("tp_price") or 0)
+    except (TypeError, ValueError):
+        return None, "bracket.sl_price / tp_price must be numeric"
+    return {
+        "sl_trigger_price": sl_trigger,
+        "sl_price": sl_price,
+        "tp_price": tp_price,
+    }, None
+
+
+def _place_bracket_children(
+    *, inbox, parent_signal_id: str, parent_action: str,
+    parent_order_data: dict, bracket: dict,
+    auth_token: str, broker: str, src_ip: str,
+) -> list[dict]:
+    """Place the SL child (always) and the TP child (if tp_price > 0) for a
+    bracket parent. Returns a list of {leg, signal_id, broker_order_id?,
+    error?} summaries — best-effort, doesn't roll back the parent on failure.
+
+    Native BO/CO support per-broker would replace this with a single
+    broker-side primitive — see broker_capabilities table (Phase 3 follow-up)."""
+    child_results: list[dict] = []
+    opposite = _opposite_action(parent_action)
+
+    # ---- SL child ----------------------------------------------------------
+    sl_signal_id = parent_signal_id + "__sl"
+    sl_pricetype = "SL" if (bracket.get("sl_price") or 0) > 0 else "SL-M"
+    sl_data = dict(parent_order_data)
+    sl_data.update({
+        "action": opposite,
+        "pricetype": sl_pricetype,
+        "price": str(bracket.get("sl_price") or 0),
+        "trigger_price": str(bracket["sl_trigger_price"]),
+    })
+    sl_audit = {
+        "_bracket_child_of": parent_signal_id,
+        "leg": "sl",
+        "symbol": sl_data["symbol"], "exchange": sl_data["exchange"],
+        "action": opposite, "pricetype": sl_pricetype,
+        "trigger_price": bracket["sl_trigger_price"],
+        "price": bracket.get("sl_price") or 0,
+        "quantity": sl_data["quantity"],
+    }
+    ok, order_id, _resp, err = _place_one_via_distribution(
+        inbox=inbox, signal_id=sl_signal_id, src_ip=src_ip,
+        payload_for_audit=sl_audit, order_data=sl_data,
+        auth_token=auth_token, broker=broker,
+    )
+    child_results.append({
+        "leg": "sl", "signal_id": sl_signal_id,
+        "broker_order_id": order_id, "error": err,
+    })
+
+    # ---- TP child (optional) -----------------------------------------------
+    tp_price = float(bracket.get("tp_price") or 0)
+    if tp_price > 0:
+        tp_signal_id = parent_signal_id + "__tp"
+        tp_data = dict(parent_order_data)
+        tp_data.update({
+            "action": opposite,
+            "pricetype": "LIMIT",
+            "price": str(tp_price),
+            "trigger_price": "0",
+        })
+        tp_audit = {
+            "_bracket_child_of": parent_signal_id,
+            "leg": "tp",
+            "symbol": tp_data["symbol"], "exchange": tp_data["exchange"],
+            "action": opposite, "pricetype": "LIMIT",
+            "price": tp_price, "quantity": tp_data["quantity"],
+        }
+        ok, order_id, _resp, err = _place_one_via_distribution(
+            inbox=inbox, signal_id=tp_signal_id, src_ip=src_ip,
+            payload_for_audit=tp_audit, order_data=tp_data,
+            auth_token=auth_token, broker=broker,
+        )
+        child_results.append({
+            "leg": "tp", "signal_id": tp_signal_id,
+            "broker_order_id": order_id, "error": err,
+        })
+    return child_results
+
+
+def _cascade_cancel_bracket_children(
+    *, inbox, parent_signal_id: str, auth_token: str, broker: str,
+) -> list[dict]:
+    """When cancelling a bracket parent, also cancel its open SL/TP children
+    if they exist and are still in status='placed'."""
+    from services.cancel_order_service import cancel_order_with_auth
+
+    out: list[dict] = []
+    for suffix in _BRACKET_CHILD_SUFFIXES:
+        child_signal_id = parent_signal_id + suffix
+        child = find_signal(inbox.id, child_signal_id)
+        if child is None or child.status != "placed" or not child.broker_order_id:
+            continue
+        try:
+            success, response_data, _http = cancel_order_with_auth(
+                orderid=child.broker_order_id,
+                auth_token=auth_token,
+                broker=broker,
+                original_data={"orderid": child.broker_order_id,
+                               "apikey": "distribution-internal"},
+            )
+        except Exception as e:
+            out.append({"leg": suffix.strip("_"), "signal_id": child_signal_id,
+                        "cancelled": False, "error": str(e)})
+            continue
+        if success:
+            update_signal_status(inbox.id, child_signal_id, "cancelled", error_message=None)
+            out.append({"leg": suffix.strip("_"), "signal_id": child_signal_id,
+                        "cancelled": True})
+        else:
+            err_msg = (response_data or {}).get("message", "unknown")
+            out.append({"leg": suffix.strip("_"), "signal_id": child_signal_id,
+                        "cancelled": False, "error": err_msg})
+    return out
+
+
 @distribution_bp.route("/distribution/inbox/<inbox_slug>", methods=["POST"])
 def receive_signal_endpoint(inbox_slug: str):
     """Receive a trade signal from an external publisher and route it to
@@ -418,6 +617,12 @@ def receive_signal_endpoint(inbox_slug: str):
     pricetype = (str(body.get("pricetype") or _DEFAULT_PRICETYPE)).strip().upper()
     if pricetype not in _VALID_PRICETYPES:
         return jsonify({"status": "error", "message": f"pricetype must be one of {sorted(_VALID_PRICETYPES)}"}), 400
+
+    # Bracket / cover (Phase 3, synthetic V1) — validate early so we can
+    # reject malformed brackets before placing the parent.
+    bracket, bracket_err = _normalise_bracket_block(body.get("bracket"))
+    if bracket_err is not None:
+        return jsonify({"status": "error", "message": bracket_err}), 400
 
     # 5. Idempotency check — same (inbox_id, signal_id) returns the prior result.
     prior = find_signal(inbox.id, signal_id)
@@ -497,12 +702,29 @@ def receive_signal_endpoint(inbox_slug: str):
         inbox_id=inbox.id, signal_id=signal_id, src_ip=src_ip,
         payload=body, status="placed", broker_used=broker, broker_order_id=broker_order_id,
     )
-    return jsonify({
+
+    # 8. (Phase 3) If parent was a bracket, place SL + optional TP children.
+    # Best-effort: a child failure does NOT undo the parent — admin sees the
+    # per-child result and can place the missing leg manually. Native BO/CO
+    # support per-broker would replace this with a single broker primitive;
+    # see _place_bracket_children docstring.
+    bracket_children = None
+    if bracket is not None:
+        bracket_children = _place_bracket_children(
+            inbox=inbox, parent_signal_id=signal_id, parent_action=action,
+            parent_order_data=order_data, bracket=bracket,
+            auth_token=auth_token, broker=broker, src_ip=src_ip,
+        )
+
+    out = {
         "status": "success",
         "broker": broker,
         "broker_order_id": broker_order_id,
         "response": response_data,
-    }), 200
+    }
+    if bracket_children is not None:
+        out["bracket_children"] = bracket_children
+    return jsonify(out), 200
 
 
 # ---------------------------------------------------------------------------
@@ -777,12 +999,24 @@ def cancel_signal_endpoint(inbox_slug: str):
         }), http_status or 502
 
     update_signal_status(inbox.id, signal_id, "cancelled", error_message=None)
-    return jsonify({
+
+    # Cascade-cancel bracket children if this was a bracket parent. We don't
+    # need to detect bracket-ness — just probe for the conventional child
+    # signal_ids. Returns [] if there were no children.
+    cascade = _cascade_cancel_bracket_children(
+        inbox=inbox, parent_signal_id=signal_id,
+        auth_token=auth_token, broker=broker,
+    )
+
+    out = {
         "status": "success",
         "broker": broker,
         "broker_order_id": prior.broker_order_id,
         "response": response_data,
-    }), 200
+    }
+    if cascade:
+        out["bracket_cascade"] = cascade
+    return jsonify(out), 200
 
 
 # ---------------------------------------------------------------------------
