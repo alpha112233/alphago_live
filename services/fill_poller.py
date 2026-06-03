@@ -208,12 +208,29 @@ def poll_once() -> dict:
             # is). Idempotent on publisher side.
             _push_to_publisher(sig, new_status, filled_qty, avg_px)
 
-            # Phase 3.1 — if this signal just flipped to 'complete' AND has
-            # a pending bracket spec attached, the parent has filled — time
-            # to place SL + TP children. Best-effort: errors don't abort the
-            # poll cycle; admin sees the result on the next inbox read.
-            if new_status == "complete" and sig.pending_bracket_json:
-                _place_pending_bracket_children(sig)
+            # Phase 3.1 — pending bracket lifecycle. The pending_bracket_json
+            # spec is set at receive time on a parent signal; the poller
+            # is the single source of truth for what happens to it:
+            #
+            #   parent flips to 'complete'  → place SL + TP children, clear
+            #   parent flips to 'cancelled' → clear (children never placed)
+            #   parent flips to 'rejected'  → clear (broker rejected parent)
+            #   any other status            → keep spec, retry next cycle
+            #
+            # Centralising lifecycle here keeps webhook paths (cancel, modify)
+            # simple — they don't need to clear the spec themselves.
+            if sig.pending_bracket_json:
+                if new_status == "complete":
+                    _place_pending_bracket_children(sig)
+                    # _place_pending_bracket_children itself clears the spec
+                    # on success path; if it raised, we leave the spec for
+                    # the next cycle to retry.
+                elif new_status in {"cancelled", "rejected"}:
+                    sig.pending_bracket_json = None
+                    logger.info(
+                        f"fill_poller: cleared pending_bracket on parent "
+                        f"signal_id={sig.signal_id} (terminal: {new_status})"
+                    )
 
     try:
         db_session.commit()
