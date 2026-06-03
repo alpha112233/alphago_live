@@ -254,15 +254,27 @@ def activate_broker(user_id: int, broker: str) -> bool:
     becomes 'saved'. Returns True on success, False if the broker isn't saved
     for this user.
 
-    Note: this only updates DB state. The caller is responsible for any
-    side-effects needed by OpenAlgo's runtime (e.g., clearing cached
-    BROKER_API_KEY at module level — see blueprints/brlogin.py refactor).
+    Side effects on a real switch (not just a no-op re-activation):
+      1. token_db.clear_cache() — drops the in-memory symbol→token LRU
+         that otherwise serves the prior broker's IDs for an hour
+      2. master_contract_download() for the new broker — replaces the
+         SymToken table so symbol lookups return THIS broker's instrument
+         keys. Synchronous so we don't return success while the next order
+         would still hit stale tokens (Found via 2026-06-03 canary —
+         Upstox order rejected with 'Invalid Instrument key' because
+         SymToken still held Dhan's numeric IDs after the customer
+         switched brokers without restarting the container).
     """
     target = db_session.query(BrokerCreds).filter_by(user_id=user_id, broker=broker).first()
     if target is None:
         return False
 
-    # Demote any current active for this user.
+    # Demote any current active for this user. Remember the prior so we
+    # only run the heavy master_contract refresh on an ACTUAL change.
+    prior_active = db_session.query(BrokerCreds).filter_by(
+        user_id=user_id, status="active",
+    ).first()
+    prior_broker = prior_active.broker if prior_active else None
     db_session.query(BrokerCreds).filter_by(user_id=user_id, status="active").update({"status": "saved"})
 
     target.status = "active"
@@ -273,7 +285,36 @@ def activate_broker(user_id: int, broker: str) -> bool:
         db_session.rollback()
         raise
     logger.info(f"broker activated: user_id={user_id} broker={broker}")
+
+    if prior_broker != broker:
+        _refresh_caches_on_broker_switch(broker, prior_broker)
     return True
+
+
+def _refresh_caches_on_broker_switch(new_broker: str, prior_broker: str | None) -> None:
+    """Clear in-memory symbol cache + reload master_contract for the new
+    broker. Best-effort: errors are logged but don't fail the activate.
+    A failed refresh leaves the DB at the old broker's symbols → next
+    order will surface the mismatch with the broker's clear error, and
+    the operator can run master_contract_download manually."""
+    try:
+        from database.token_db import clear_cache as _clear_cache
+        _clear_cache()
+        logger.info("broker switch: token_cache cleared")
+    except Exception:
+        logger.exception("broker switch: clear_cache failed (non-fatal)")
+
+    try:
+        import importlib
+        mod = importlib.import_module(f"broker.{new_broker}.database.master_contract_db")
+        mod.master_contract_download()
+        logger.info(f"broker switch: master_contract for '{new_broker}' refreshed "
+                    f"(was '{prior_broker}')")
+    except Exception:
+        logger.exception(
+            f"broker switch: master_contract_download for '{new_broker}' failed "
+            f"(non-fatal — orders may fail until operator triggers manually)"
+        )
 
 
 def get_active_broker(user_id: int) -> str | None:
@@ -298,14 +339,27 @@ def mark_auth_success(user_id: int, broker: str) -> None:
         return
     row.last_auth_at = datetime.utcnow()
     row.last_error = None
-    if row.status != "active":
-        # First successful auth implicitly activates this broker.
+    implicitly_activated = row.status != "active"
+    if implicitly_activated:
+        # Capture the prior active broker (if any) BEFORE we flip statuses,
+        # so the cache-refresh below knows whether this is a real switch.
+        prior_active = db_session.query(BrokerCreds).filter_by(
+            user_id=user_id, status="active",
+        ).first()
+        prior_broker = prior_active.broker if prior_active and prior_active.broker != broker else None
+        # First successful auth implicitly activates this broker. Demote
+        # any other active row for the same user (mirrors activate_broker).
+        db_session.query(BrokerCreds).filter_by(
+            user_id=user_id, status="active",
+        ).update({"status": "saved"})
         row.status = "active"
     try:
         db_session.commit()
     except Exception:
         db_session.rollback()
         raise
+    if implicitly_activated:
+        _refresh_caches_on_broker_switch(broker, prior_broker)
 
 
 def mark_auth_error(user_id: int, broker: str, error: str) -> None:
