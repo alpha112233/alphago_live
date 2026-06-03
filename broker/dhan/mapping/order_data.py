@@ -144,6 +144,11 @@ def transform_order_data(orders):
             "orderid": order.get("orderId", ""),
             "order_status": order.get("orderStatus", ""),
             "timestamp": order.get("updateTime", ""),
+            # Fill detail — kept so fill_poller and orderbook UI surface
+            # execution state. Upstream OpenAlgo's transform dropped these.
+            "filled_quantity": order.get("filledQty", 0),
+            "pending_quantity": order.get("remainingQuantity", 0),
+            "average_price": order.get("averageTradedPrice", 0.0),
         }
 
         transformed_orders.append(transformed_order)
