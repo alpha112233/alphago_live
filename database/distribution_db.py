@@ -138,6 +138,13 @@ class DistributionSignal(Base):
     filled_quantity = Column(Integer, nullable=True)
     average_price = Column(Float, nullable=True)
     last_polled_at = Column(DateTime, nullable=True)
+    # Phase 3.1 — pending bracket spec. JSON of {sl_trigger_price, sl_price?,
+    # tp_price?} attached to a parent signal at receive time when the payload
+    # carried a `bracket` block. The fill_poller places the SL + TP children
+    # only AFTER the parent's fill_status flips to 'complete' — preventing
+    # the V1 issue where a TP child could fill on its own before the parent.
+    # Cleared after children are placed (or on cancel).
+    pending_bracket_json = Column(Text, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("inbox_id", "signal_id", name="uix_inbox_signal"),
@@ -181,6 +188,11 @@ def _migrate_add_columns_if_missing() -> None:
                 "ALTER TABLE distribution_signals ADD COLUMN last_polled_at DATETIME NULL"
             ))
             logger.info("migration: added distribution_signals.last_polled_at")
+        if "pending_bracket_json" not in cols:
+            conn.execute(text(
+                "ALTER TABLE distribution_signals ADD COLUMN pending_bracket_json TEXT NULL"
+            ))
+            logger.info("migration: added distribution_signals.pending_bracket_json")
 
 
 # ---- key generation + hashing ----------------------------------------------
@@ -425,6 +437,46 @@ def find_signal(inbox_id: int, signal_id: str) -> DistributionSignal | None:
         .filter_by(inbox_id=inbox_id, signal_id=signal_id)
         .first()
     )
+
+
+def set_pending_bracket(inbox_id: int, signal_id: str, bracket: dict) -> bool:
+    """Attach a bracket spec to a parent signal — the fill_poller picks this
+    up and places SL+TP children once the parent flips to fill_status='complete'.
+    Returns True if a row was updated."""
+    row = (
+        db_session.query(DistributionSignal)
+        .filter_by(inbox_id=inbox_id, signal_id=signal_id)
+        .first()
+    )
+    if row is None:
+        return False
+    row.pending_bracket_json = json.dumps(bracket)
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    return True
+
+
+def clear_pending_bracket(inbox_id: int, signal_id: str) -> bool:
+    """Clear the bracket spec on a parent signal. Called after children are
+    placed, or when the parent is cancelled before fill (to prevent the
+    poller from later placing children for a parent that's already gone)."""
+    row = (
+        db_session.query(DistributionSignal)
+        .filter_by(inbox_id=inbox_id, signal_id=signal_id)
+        .first()
+    )
+    if row is None or row.pending_bracket_json is None:
+        return False
+    row.pending_bracket_json = None
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+    return True
 
 
 def update_signal_status(
