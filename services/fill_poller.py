@@ -208,6 +208,13 @@ def poll_once() -> dict:
             # is). Idempotent on publisher side.
             _push_to_publisher(sig, new_status, filled_qty, avg_px)
 
+            # Phase 3.1 — if this signal just flipped to 'complete' AND has
+            # a pending bracket spec attached, the parent has filled — time
+            # to place SL + TP children. Best-effort: errors don't abort the
+            # poll cycle; admin sees the result on the next inbox read.
+            if new_status == "complete" and sig.pending_bracket_json:
+                _place_pending_bracket_children(sig)
+
     try:
         db_session.commit()
     except Exception:
@@ -335,6 +342,32 @@ def _is_unchanged(sig, new_status: str, filled_qty: int | None, avg_px: float | 
     if avg_px is not None and sig.average_price != avg_px:
         return False
     return True
+
+
+def _place_pending_bracket_children(parent_sig) -> None:
+    """Phase 3.1 — called when a parent flips to fill_status='complete'.
+    Places the SL + TP children that the receive webhook attached as a
+    pending spec. Clears the spec regardless of placement outcome so we
+    don't retry next cycle (a half-placed bracket is documented; admin
+    can re-place the missing leg manually if needed).
+
+    Best-effort: any exception here is logged and swallowed; the poller
+    cycle continues."""
+    try:
+        from blueprints.distribution import place_bracket_children_for_parent
+        from database.distribution_db import clear_pending_bracket
+        results = place_bracket_children_for_parent(parent_sig, src_ip="fill-poller")
+        logger.info(
+            f"fill_poller: placed bracket children for parent signal_id="
+            f"{parent_sig.signal_id}: {results}"
+        )
+        clear_pending_bracket(parent_sig.inbox_id, parent_sig.signal_id)
+    except Exception:
+        logger.exception(
+            f"fill_poller: failed to place bracket children for parent "
+            f"signal_id={parent_sig.signal_id} — will retry next cycle "
+            f"(pending_bracket_json NOT cleared)"
+        )
 
 
 def _push_to_publisher(sig, fill_status: str, filled_qty: int | None, avg_px: float | None) -> None:

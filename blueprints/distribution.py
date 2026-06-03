@@ -39,6 +39,7 @@ from flask import Blueprint, jsonify, request, session
 
 from database.distribution_db import (
     check_api_key,
+    clear_pending_bracket,
     create_inbox,
     delete_inbox,
     find_signal,
@@ -47,6 +48,7 @@ from database.distribution_db import (
     list_signals,
     record_signal,
     rotate_api_key,
+    set_pending_bracket,
     update_inbox,
     update_signal_status,
 )
@@ -439,6 +441,63 @@ def _normalise_bracket_block(block) -> tuple[dict | None, str | None]:
     }, None
 
 
+def place_bracket_children_for_parent(parent_signal_row, src_ip: str = "fill-poller") -> list[dict]:
+    """Resolve everything _place_bracket_children needs from a parent
+    DistributionSignal row and run it. Called by services/fill_poller.py
+    when a parent flips to fill_status='complete'.
+
+    Reads the bracket spec from parent.pending_bracket_json and the original
+    payload from parent.payload_json. Uses the SAME broker the parent was
+    placed on (NOT necessarily the customer's currently-active broker). Best-
+    effort: on placement-failure, errors land in the returned list but no
+    exception is raised."""
+    from database.distribution_db import db_session as _ds, DistributionInbox
+    inbox = _ds.query(DistributionInbox).filter_by(id=parent_signal_row.inbox_id).first()
+    if inbox is None:
+        return [{"error": f"inbox {parent_signal_row.inbox_id} gone"}]
+    if not parent_signal_row.pending_bracket_json:
+        return [{"error": "no pending bracket spec on parent"}]
+    try:
+        bracket = json.loads(parent_signal_row.pending_bracket_json)
+    except Exception as e:
+        return [{"error": f"bracket spec parse failed: {e}"}]
+    try:
+        payload = json.loads(parent_signal_row.payload_json or "{}")
+    except Exception:
+        payload = {}
+
+    # Reconstruct the order_data the parent went out with — same shape as
+    # receive_signal_endpoint built. Children inherit symbol/exchange/qty/
+    # product; action + pricetype + price/trigger are overridden per child.
+    parent_order_data = {
+        "apikey": "distribution-internal",
+        "strategy": f"distribution:{inbox.name}",
+        "symbol": str(payload.get("symbol", "")).strip().upper(),
+        "exchange": str(payload.get("exchange", "")).strip().upper(),
+        "action": str(payload.get("action", "")).strip().upper(),
+        "pricetype": "LIMIT",   # children override; placeholder
+        "product": str(payload.get("product") or _DEFAULT_PRODUCT).strip().upper(),
+        # Use the FILLED quantity if available — handles partial fills
+        # correctly. Fall back to original quantity if nothing was filled.
+        "quantity": str(parent_signal_row.filled_quantity or int(payload.get("quantity") or 0)),
+        "price": "0",
+        "trigger_price": "0",
+        "disclosed_quantity": str(payload.get("disclosed_quantity") or 0),
+    }
+
+    broker = parent_signal_row.broker_used
+    auth_token, terr = _token_for_specific_broker(inbox.user_id, broker)
+    if terr is not None:
+        return [{"error": f"auth for broker={broker}: {terr}"}]
+
+    return _place_bracket_children(
+        inbox=inbox, parent_signal_id=parent_signal_row.signal_id,
+        parent_action=parent_order_data["action"],
+        parent_order_data=parent_order_data, bracket=bracket,
+        auth_token=auth_token, broker=broker, src_ip=src_ip,
+    )
+
+
 def _place_bracket_children(
     *, inbox, parent_signal_id: str, parent_action: str,
     parent_order_data: dict, bracket: dict,
@@ -448,8 +507,10 @@ def _place_bracket_children(
     bracket parent. Returns a list of {leg, signal_id, broker_order_id?,
     error?} summaries — best-effort, doesn't roll back the parent on failure.
 
-    Native BO/CO support per-broker would replace this with a single
-    broker-side primitive — see broker_capabilities table (Phase 3 follow-up)."""
+    Called by `place_bracket_children_for_parent` after the parent's fill
+    completes. The Phase-3 V1 version called this inline from the webhook;
+    Phase 3.1 (2026-06-03) moved it to fill-time to prevent TP-fills-before-
+    parent issues."""
     child_results: list[dict] = []
     opposite = _opposite_action(parent_action)
 
@@ -703,18 +764,25 @@ def receive_signal_endpoint(inbox_slug: str):
         payload=body, status="placed", broker_used=broker, broker_order_id=broker_order_id,
     )
 
-    # 8. (Phase 3) If parent was a bracket, place SL + optional TP children.
-    # Best-effort: a child failure does NOT undo the parent — admin sees the
-    # per-child result and can place the missing leg manually. Native BO/CO
-    # support per-broker would replace this with a single broker primitive;
-    # see _place_bracket_children docstring.
-    bracket_children = None
+    # 8. (Phase 3.1) If parent was a bracket, ATTACH the spec to the parent
+    # row and let the fill_poller place children only AFTER the parent's
+    # fill_status flips to 'complete'. V1 placed children inline immediately
+    # after parent placement — but for LIMIT parents that's wrong: the TP
+    # child (opposite-side LIMIT at a profitable price) could fill on its
+    # own against current market before the parent ever filled, creating an
+    # unintended contra position. Confirmed via the 2026-06-03 canary —
+    # see services/fill_poller.py for the placement-on-fill logic.
+    bracket_state = None
     if bracket is not None:
-        bracket_children = _place_bracket_children(
-            inbox=inbox, parent_signal_id=signal_id, parent_action=action,
-            parent_order_data=order_data, bracket=bracket,
-            auth_token=auth_token, broker=broker, src_ip=src_ip,
-        )
+        set_pending_bracket(inbox.id, signal_id, bracket)
+        bracket_state = {
+            "status": "pending_parent_fill",
+            "note": (
+                "SL + TP children will be placed by the fill poller once the "
+                "parent's fill_status flips to 'complete'. If the parent is "
+                "cancelled or rejected before then, children are never placed."
+            ),
+        }
 
     out = {
         "status": "success",
@@ -722,8 +790,8 @@ def receive_signal_endpoint(inbox_slug: str):
         "broker_order_id": broker_order_id,
         "response": response_data,
     }
-    if bracket_children is not None:
-        out["bracket_children"] = bracket_children
+    if bracket_state is not None:
+        out["bracket_children"] = bracket_state
     return jsonify(out), 200
 
 
@@ -1000,9 +1068,17 @@ def cancel_signal_endpoint(inbox_slug: str):
 
     update_signal_status(inbox.id, signal_id, "cancelled", error_message=None)
 
-    # Cascade-cancel bracket children if this was a bracket parent. We don't
-    # need to detect bracket-ness — just probe for the conventional child
-    # signal_ids. Returns [] if there were no children.
+    # Phase 3.1 — if this was a bracket parent that was cancelled BEFORE the
+    # fill_poller saw it complete, clear the pending_bracket_json so the
+    # poller doesn't later place children for a cancelled parent. No-op if
+    # the spec was already cleared (e.g. children were already placed and
+    # the cancel happened post-fill — the cascade below handles those).
+    clear_pending_bracket(inbox.id, signal_id)
+
+    # Cascade-cancel bracket children if this was a bracket parent and
+    # children already exist (i.e. parent had filled, poller placed them).
+    # Probe for the conventional child signal_ids. Returns [] if there
+    # were no children.
     cascade = _cascade_cancel_bracket_children(
         inbox=inbox, parent_signal_id=signal_id,
         auth_token=auth_token, broker=broker,
