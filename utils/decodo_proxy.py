@@ -69,6 +69,30 @@ DEFAULT_V4_HOSTS = {
 }
 
 
+# Broker-name → does this broker need a v4 IP allocated. Used by
+# broker_credentials.py to decide whether to gate activation on a
+# dedicated v4 IP being assigned (Phase 7.6 allocate-on-demand).
+# Keep the lowercase names aligned with broker_creds_db.broker values.
+V4_ONLY_BROKERS = {
+    "arihant",
+    "hdfcsec",
+    "mstock",
+    "motilaloswal",
+    "compositedge",
+    "shoonya",
+    "firstock",
+    "tradejini",
+    "pocketful",
+    "wisdom",
+    "zebu",
+    "samco",
+}
+
+
+def broker_needs_v4(broker: str) -> bool:
+    return (broker or "").strip().lower() in V4_ONLY_BROKERS
+
+
 def _hosts_set() -> set[str]:
     extra = (os.getenv("EGRESS_V4_HOSTS") or "").strip()
     if not extra:
