@@ -536,9 +536,13 @@ export default function BrokerManager() {
               </p>
               <CopyableCode value={hostInfo.client_ipv6} label="IPv6:" />
               <p className="text-xs text-muted-foreground pt-1">
-                Use for: Dhan, Upstox, Fyers, AngelOne, Groww, Kotak, IIFL, ICICI Direct,
-                HDFC InvestRight, Definedge, FivePaisa, Paytm Money, Zerodha, Flattrade,
-                IndMoney. Unique to your instance — no scarcity, no shared-IP risk.
+                Use for: Dhan, Upstox, Fyers, AngelOne, Groww, Kotak, IIFL,
+                Definedge, FivePaisa, Paytm Money, Zerodha, Flattrade, IndMoney.
+                Unique to your instance — no scarcity, no shared-IP risk.
+                <br />
+                <strong>Do NOT use IPv6 for Arihant, ICICI Direct, or HDFC InvestRight</strong> —
+                their API endpoints are IPv4-only and will reject v6 traffic.
+                Whitelist the IPv4 address below instead.
               </p>
             </div>
             {hostInfo.client_ipv4_pool && hostInfo.client_ipv4_pool.length > 1 ? (

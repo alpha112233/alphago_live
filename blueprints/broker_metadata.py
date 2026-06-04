@@ -174,9 +174,9 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "api_key", "label": "Arihant App ID (api-key)",
          "type": "text", "required": True,
          "help": "Issued by Arihant's TradeBridge developer portal."},
-        {"name": "api_secret", "label": "user_id:::refresh_token (set after OTP login)",
+        {"name": "api_secret", "label": "Refresh token (auto-set by Connect button — leave blank)",
          "type": "password", "required": False,
-         "help": "Auto-populated after you complete one-time OTP login at /broker/arihant/login. Daily auto-login uses the refresh token to mint fresh access tokens."},
+         "help": "DON'T enter manually. After you save the App ID and click 'Connect Arihant Capital', a two-step OTP page opens; once you complete it, this field is auto-populated with your user ID + refresh token. The daily 08:00 IST auto-login uses it to mint a fresh access token."},
     ],
     # ICICI Direct Breeze API — full port (feat/icici-direct-full-port).
     # Customer pastes app_key + secret_key once; daily session_token is
@@ -582,11 +582,11 @@ addresses are equally valid and you don't pick one over the other.
      instead of OAuth; this field can be blank or `https://localhost`).
 3. After app creation the portal shows an **App ID** (called `api-key` in
    the API). Copy it.
-4. **Whitelist our shared server IPv4** (mandatory before any order will
-   succeed): In the same developer portal, open your app → **API Settings
+4. **Whitelist your dedicated IPv4** (mandatory — orders fail until this
+   is done): In the same developer portal, open your app → **API Settings
    → Allowed IPs** (the exact menu varies; if you can't find it, contact
-   Arihant support and ask them to whitelist the IP listed at the top of
-   this page in the green "Static IPv4" callout). Paste only that IPv4
+   Arihant support and ask them to whitelist the IPv4 shown at the top
+   of this page under "Dedicated IPv4 — Primary"). Paste only that IPv4
    address — no CIDR notation, no port. Save.
 5. Paste into the form here:
    - **Arihant App ID:** the App ID from step 3.
@@ -606,11 +606,6 @@ addresses are equally valid and you don't pick one over the other.
    OTP prompts. You only need to repeat steps 6–7 if Arihant invalidates
    your refresh token (typically every 6 months, or when you change your
    trading password).
-
-ℹ️ **Geo-headers:** Arihant rejects order-placement requests without
-`X-latitude` / `X-longitude` headers. The plugin sends Mumbai office
-defaults; if you're running from a different geo and Arihant flags it,
-override via `ARIHANT_LATITUDE` / `ARIHANT_LONGITUDE` env vars.
 
 Official docs: https://tradebridge.arihantplus.com/docs (login required)
 """,
