@@ -564,20 +564,15 @@ Official docs: https://developer.paytmmoney.com/docs/
 
 ⚠️ **IPv4 whitelisting required:** Arihant's API endpoint
 (`tradebridge.arihantplus.com`) is IPv4-only. AlphaQuark routes Arihant
-traffic through our **shared server IPv4** (shown at the top of this
-page in the green "Static IPv4" callout), instead of the per-customer
-IPv6 used for other brokers. Whitelist that v4 address in Arihant's
-developer portal where it asks for "Allowed IPs". Limitations of the
-shared-IP path:
+traffic through your **dedicated IPv4** (shown at the top of this page
+under "Dedicated IPv4 — Primary"). Whitelist that v4 address in Arihant's
+developer portal where it asks for "Allowed IPs".
 
-- Every Arihant customer on this server shares the same egress IP. If
-  Arihant rate-limits or bans the IP, all customers lose Arihant access
-  at once.
-- If we migrate the server (rare), the v4 changes and you must re-whitelist.
-
-We're in the process of building **per-customer IPv4** to remove this
-constraint — until then, the shared path is the only way to use Arihant
-on AlphaQuark.
+If we've assigned you a **Secondary IPv4** (also visible at the top of
+this page), whitelist that too in the same field. The failover happens
+automatically — when the primary path is unreachable, outbound Arihant
+calls transparently use the secondary. From your perspective both
+addresses are equally valid and you don't pick one over the other.
 
 1. Open **https://tradebridge.arihantplus.com/dev-portal** (the TradeBridge
    L2 developer portal) and sign in with your Arihant trading credentials.

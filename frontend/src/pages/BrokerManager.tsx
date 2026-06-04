@@ -541,7 +541,35 @@ export default function BrokerManager() {
                 IndMoney. Unique to your instance — no scarcity, no shared-IP risk.
               </p>
             </div>
-            {hostInfo.shared_host_ipv4 && (
+            {hostInfo.client_ipv4_primary ? (
+              <>
+                <div>
+                  <p className="text-xs font-semibold text-emerald-300 mb-1">
+                    Dedicated IPv4 — Primary (per-customer)
+                  </p>
+                  <CopyableCode value={hostInfo.client_ipv4_primary} label="IPv4 (primary):" />
+                  <p className="text-xs text-muted-foreground pt-1">
+                    Use for: <strong>Arihant Capital</strong> and any other broker whose API
+                    endpoint is IPv4-only. Routed via a Vodafone Idea ISP IP from our Mumbai
+                    pool, dedicated to your account.
+                  </p>
+                </div>
+                {hostInfo.client_ipv4_secondary && (
+                  <div>
+                    <p className="text-xs font-semibold text-emerald-300 mb-1">
+                      Dedicated IPv4 — Secondary (failover)
+                    </p>
+                    <CopyableCode value={hostInfo.client_ipv4_secondary} label="IPv4 (secondary):" />
+                    <p className="text-xs text-muted-foreground pt-1">
+                      Failover IP. Whitelist this at the same broker as your primary. If the
+                      primary path is unreachable (Decodo outage, IP issue), outbound calls
+                      transparently use this one. No action needed from you during failover —
+                      just keep both whitelisted.
+                    </p>
+                  </div>
+                )}
+              </>
+            ) : hostInfo.shared_host_ipv4 ? (
               <div>
                 <p className="text-xs font-semibold text-amber-300 mb-1">
                   Static IPv4 (shared across customers on this server)
@@ -549,12 +577,11 @@ export default function BrokerManager() {
                 <CopyableCode value={hostInfo.shared_host_ipv4} label="IPv4:" />
                 <p className="text-xs text-muted-foreground pt-1">
                   Use for: <strong>Arihant Capital</strong> (and any other broker whose API
-                  endpoint is IPv4-only). Every customer on this server shares this IP — if
-                  Arihant rate-limits or bans it, all customers lose Arihant access at once.
-                  Per-customer IPv4 is on the roadmap.
+                  endpoint is IPv4-only). Every customer on this server shares this IP —
+                  contact support to upgrade to a dedicated IPv4.
                 </p>
               </div>
-            )}
+            ) : null}
             {hostInfo.redirect_url_pattern && (
               <div>
                 <p className="text-xs font-semibold text-slate-300 mb-1">

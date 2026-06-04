@@ -206,6 +206,14 @@ def _create_http_client() -> httpx.Client:
             event_hooks={"request": [log_request], "response": [log_response]},
         )
 
+        # Phase 7 (2026-06-05) — IPv4-only broker hosts (Arihant TradeBridge,
+        # HDFC InvestRight, etc.) get routed through a per-customer Decodo
+        # ISP proxy with optional failover to a secondary IP. Most brokers
+        # (v6-capable) keep using the direct CLIENT_IPV6 binding.
+        # The `mounts` dict picks the right transport per destination host.
+        from utils.decodo_proxy import build_mounts as _decodo_mounts
+        mounts = _decodo_mounts(http2=http2_enabled, limits=_limits)
+
         if client_ipv6:
             client = httpx.Client(
                 transport=httpx.HTTPTransport(
@@ -216,15 +224,20 @@ def _create_http_client() -> httpx.Client:
                     verify=True,
                     retries=0,
                 ),
+                mounts=mounts or None,
                 **common_kwargs,
             )
-            logger.info(f"httpx client bound to CLIENT_IPV6={client_ipv6} (per-customer egress)")
+            logger.info(
+                f"httpx client bound to CLIENT_IPV6={client_ipv6} (per-customer egress); "
+                f"v4-only broker hosts routed via Decodo: {len(mounts)//2 if mounts else 0} hosts mounted"
+            )
         else:
             client = httpx.Client(
                 http2=http2_enabled,
                 http1=True,
                 limits=_limits,
                 verify=True,
+                mounts=mounts or None,
                 **common_kwargs,
             )
 
