@@ -520,26 +520,56 @@ export default function BrokerManager() {
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Network className="h-4 w-4" />
-              Your dedicated IPv6 address
+              IP addresses to whitelist at your broker
             </CardTitle>
             <CardDescription>
-              This is a unique static IP, assigned just to your Alpha Live instance. Paste it into
-              every broker's developer console under "Whitelisted IPs" (or equivalent) before you
-              connect — brokers will refuse API calls from any other source.
+              Most brokers accept your dedicated IPv6 below. A few are IPv4-only and need
+              the shared server IPv4 instead. Each broker's setup guide tells you which to
+              use — paste the right one in your broker's developer console under "Whitelisted
+              IPs" (or equivalent) before connecting.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-2">
-            <CopyableCode value={hostInfo.client_ipv6} label="IPv6:" />
-            {hostInfo.redirect_url_pattern && (
-              <CopyableCode
-                value={hostInfo.redirect_url_pattern}
-                label="Redirect URL pattern:"
-              />
+          <CardContent className="space-y-3">
+            <div>
+              <p className="text-xs font-semibold text-emerald-300 mb-1">
+                Dedicated IPv6 (per-customer)
+              </p>
+              <CopyableCode value={hostInfo.client_ipv6} label="IPv6:" />
+              <p className="text-xs text-muted-foreground pt-1">
+                Use for: Dhan, Upstox, Fyers, AngelOne, Groww, Kotak, IIFL, ICICI Direct,
+                HDFC InvestRight, Definedge, FivePaisa, Paytm Money, Zerodha, Flattrade,
+                IndMoney. Unique to your instance — no scarcity, no shared-IP risk.
+              </p>
+            </div>
+            {hostInfo.shared_host_ipv4 && (
+              <div>
+                <p className="text-xs font-semibold text-amber-300 mb-1">
+                  Static IPv4 (shared across customers on this server)
+                </p>
+                <CopyableCode value={hostInfo.shared_host_ipv4} label="IPv4:" />
+                <p className="text-xs text-muted-foreground pt-1">
+                  Use for: <strong>Arihant Capital</strong> (and any other broker whose API
+                  endpoint is IPv4-only). Every customer on this server shares this IP — if
+                  Arihant rate-limits or bans it, all customers lose Arihant access at once.
+                  Per-customer IPv4 is on the roadmap.
+                </p>
+              </div>
             )}
-            <p className="text-xs text-muted-foreground pt-1">
-              The <code className="text-xs">&lt;broker&gt;</code> in the redirect URL becomes the
-              actual broker name (e.g. <code className="text-xs">/upstox/callback</code>).
-            </p>
+            {hostInfo.redirect_url_pattern && (
+              <div>
+                <p className="text-xs font-semibold text-slate-300 mb-1">
+                  OAuth redirect URL pattern
+                </p>
+                <CopyableCode
+                  value={hostInfo.redirect_url_pattern}
+                  label="Redirect URL:"
+                />
+                <p className="text-xs text-muted-foreground pt-1">
+                  The <code className="text-xs">&lt;broker&gt;</code> becomes the actual
+                  broker name (e.g. <code className="text-xs">/upstox/callback</code>).
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
