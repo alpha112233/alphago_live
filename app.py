@@ -326,6 +326,7 @@ def create_app():
             "distribution_bp.receive_signal_endpoint",
             "distribution_bp.modify_signal_endpoint",
             "distribution_bp.cancel_signal_endpoint",
+            "distribution_bp.exit_signal_endpoint",
             "distribution_bp.get_positions_endpoint",
         ):
             if fn_name in app.view_functions:

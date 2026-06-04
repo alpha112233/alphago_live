@@ -1096,6 +1096,311 @@ def cancel_signal_endpoint(inbox_slug: str):
 
 
 # ---------------------------------------------------------------------------
+# EXIT by signal_id (Phase 6)
+# ---------------------------------------------------------------------------
+#
+# Unified "close this position OR cancel it if still pending" action. Decides
+# per-broker order status:
+#
+#   broker status = open / trigger pending → CANCEL the order (no fill yet)
+#   broker status = complete                → CLOSE the position (reverse-side
+#                                              MARKET order, qty = min(our
+#                                              filled_quantity, broker's
+#                                              current position) — Layer-1
+#                                              style; never overshoot the
+#                                              actual broker position)
+#   broker status = cancelled / rejected   → NO-OP (already gone)
+#
+# Always cascades to bracket children (cancel-or-close them too) — without
+# this, an EXIT on a bracket parent would leave the SL+TP sitting at broker
+# and any one of them could match the market, re-opening the position in
+# the opposite direction. Bad.
+
+
+def _broker_status_for_order(broker: str, auth_token: str, broker_order_id: str) -> tuple[str | None, dict | None]:
+    """Pull the order's current normalised status from the broker. Returns
+    (normalised_status, raw_order_dict). normalised_status is one of:
+    complete | open | partial | trigger pending | cancelled | rejected
+    or None if we couldn't read the orderbook."""
+    try:
+        from services.orderbook_service import get_orderbook_with_auth
+        success, resp, _http = get_orderbook_with_auth(
+            auth_token=auth_token, broker=broker, original_data=None,
+        )
+    except Exception:
+        logger.exception("_broker_status_for_order: orderbook fetch raised")
+        return None, None
+    if not success:
+        return None, None
+    orders = ((resp or {}).get("data") or {}).get("orders") or []
+    for o in orders:
+        if str(o.get("orderid") or "") == str(broker_order_id):
+            raw_status = (o.get("order_status") or o.get("status") or "").strip().lower()
+            # Same synonym map fill_poller uses (kept in sync intentionally).
+            if raw_status in {"completed", "executed", "filled"}:
+                raw_status = "complete"
+            if raw_status in {"open_pending", "pending"}:
+                raw_status = "open"
+            return raw_status or None, o
+    return None, None
+
+
+def _broker_position_for(broker: str, auth_token: str, symbol: str, exchange: str, product: str) -> int | None:
+    """Read the broker's current net position for (symbol, exchange, product).
+    Returns the signed net qty (positive long, negative short) or None if we
+    can't read the positionbook. The EXIT close path uses this to ensure we
+    never overshoot the actual position (Layer-1 close discipline)."""
+    try:
+        from services.positionbook_service import get_positionbook_with_auth
+        success, resp, _http = get_positionbook_with_auth(
+            auth_token=auth_token, broker=broker, original_data=None,
+        )
+    except Exception:
+        logger.exception("_broker_position_for: positionbook fetch raised")
+        return None
+    if not success:
+        return None
+    positions = ((resp or {}).get("data") or {}).get("positions") or []
+    for p in positions:
+        if (
+            (p.get("symbol") or "").upper() == symbol.upper()
+            and (p.get("exchange") or "").upper() == exchange.upper()
+            and (p.get("product") or "").upper() == product.upper()
+        ):
+            # OpenAlgo's normalised positionbook returns 'quantity' as signed
+            # net qty. (BUY-side leftover positive, SELL-side negative.)
+            try:
+                return int(p.get("quantity") or 0)
+            except (TypeError, ValueError):
+                return 0
+    return None  # no row → no position
+
+
+@distribution_bp.route("/distribution/inbox/<inbox_slug>/exit", methods=["POST"])
+def exit_signal_endpoint(inbox_slug: str):
+    """Exit a placed signal — cancel if open, close if filled, noop if
+    already terminal. Always cascade-cancels any bracket children.
+
+    Body: {"signal_id": "<original signal_id>"}
+
+    Returns:
+      {
+        "status": "success",
+        "action_taken": "cancelled" | "closed" | "already_closed" | "noop",
+        "broker": "upstox",
+        "broker_order_id": "...",      # original ENTRY order
+        "close_order_id": "...",       # set when action_taken=closed
+        "closed_quantity": 1,          # set when action_taken=closed
+        "bracket_cascade": [...]       # if bracket parent
+      }
+    """
+    src_ip = _real_source_ip()
+
+    inbox = get_inbox_by_slug(inbox_slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox"}), 404
+    if inbox.status != "active":
+        return jsonify({"status": "error", "message": "inbox disabled"}), 403
+
+    presented_key = _extract_bearer_or_apikey_header()
+    if not check_api_key(inbox, presented_key):
+        return jsonify({
+            "status": "error",
+            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
+        }), 401
+
+    if not _ip_is_allowed(src_ip, inbox.allowed_ips):
+        return jsonify({
+            "status": "error",
+            "message": f"source IP {src_ip} not in this inbox's allowlist",
+        }), 403
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"status": "error", "message": "request body must be JSON object"}), 400
+
+    signal_id = str(body.get("signal_id") or "")[:160]
+    if not signal_id:
+        return jsonify({"status": "error", "message": "signal_id is required"}), 400
+
+    prior, err, code = _lookup_original_for_modify_or_cancel(inbox.id, signal_id)
+    if err is not None:
+        return jsonify({"status": "error", "message": err}), code
+
+    broker = prior.broker_used
+    auth_token, terr = _token_for_specific_broker(inbox.user_id, broker)
+    if terr is not None:
+        return jsonify({"status": "error", "broker": broker, "message": terr}), 503
+
+    # Reconstruct original payload — needed for both cancel and close paths.
+    try:
+        payload = json.loads(prior.payload_json) if prior.payload_json else {}
+    except Exception:
+        payload = {}
+    symbol = str(payload.get("symbol", "")).strip().upper()
+    exchange = str(payload.get("exchange", "")).strip().upper()
+    product = str(payload.get("product") or _DEFAULT_PRODUCT).strip().upper()
+    entry_action = str(payload.get("action", "")).strip().upper()
+    opposite = _opposite_action(entry_action)
+
+    # 1. Read broker-side status to decide cancel vs close vs noop.
+    broker_status, _raw = _broker_status_for_order(broker, auth_token, prior.broker_order_id)
+    if broker_status is None:
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "message": f"could not read order {prior.broker_order_id} from broker orderbook — refusing to act blindly",
+        }), 503
+
+    out: dict = {
+        "status": "success",
+        "broker": broker,
+        "broker_order_id": prior.broker_order_id,
+        "broker_status_at_exit": broker_status,
+    }
+
+    action_taken = "noop"
+    if broker_status in {"open", "trigger pending"}:
+        # Cancel — order hasn't filled.
+        try:
+            from services.cancel_order_service import cancel_order_with_auth
+            success, response_data, _http = cancel_order_with_auth(
+                orderid=prior.broker_order_id,
+                auth_token=auth_token,
+                broker=broker,
+                original_data={"orderid": prior.broker_order_id, "apikey": "distribution-internal"},
+            )
+        except Exception as e:
+            logger.exception("EXIT cancel raised")
+            out["status"] = "error"
+            out["message"] = str(e)
+            return jsonify(out), 500
+        if success:
+            update_signal_status(inbox.id, signal_id, "cancelled", error_message=None)
+            action_taken = "cancelled"
+        else:
+            err_msg = (response_data or {}).get("message", "cancel failed")
+            out["status"] = "error"
+            out["message"] = err_msg
+            return jsonify(out), 502
+
+    elif broker_status in {"complete", "partial"}:
+        # Close — order is filled. Compute the close qty as min(our
+        # filled_quantity, broker's current net position) so we never
+        # overshoot. The fill_poller has been writing filled_quantity to
+        # this row; fall back to the original signal quantity if not set.
+        our_filled = prior.filled_quantity or int(payload.get("quantity") or 0)
+        if our_filled <= 0:
+            # No quantity to close. Treat as already closed.
+            update_signal_status(inbox.id, signal_id, "cancelled", error_message="exit: nothing to close")
+            action_taken = "already_closed"
+        else:
+            broker_net = _broker_position_for(broker, auth_token, symbol, exchange, product)
+            # broker_net is signed: positive = long, negative = short.
+            # We need same-sign as the entry filled qty. If broker shows 0
+            # or opposite sign, the position has already been closed
+            # somehow (manual close, EOD square-off, etc).
+            entry_sign = 1 if entry_action == "BUY" else -1
+            if broker_net is None or broker_net * entry_sign <= 0:
+                update_signal_status(
+                    inbox.id, signal_id, "cancelled",
+                    error_message=f"exit: broker shows no matching open position (net={broker_net})",
+                )
+                action_taken = "already_closed"
+            else:
+                close_qty = min(our_filled, abs(broker_net))
+                close_order_data = {
+                    "apikey": "distribution-internal",
+                    "strategy": f"distribution:{inbox.name}:exit",
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "action": opposite,
+                    "pricetype": "MARKET",
+                    "product": product,
+                    "quantity": str(close_qty),
+                    "price": "0",
+                    "trigger_price": "0",
+                    "disclosed_quantity": str(payload.get("disclosed_quantity") or 0),
+                }
+                try:
+                    from services.place_order_service import place_order_with_auth
+                    success, response_data, _http = place_order_with_auth(
+                        order_data=close_order_data,
+                        auth_token=auth_token,
+                        broker=broker,
+                        original_data=close_order_data,
+                        emit_event=True,
+                    )
+                except Exception as e:
+                    logger.exception("EXIT close placement raised")
+                    out["status"] = "error"
+                    out["message"] = str(e)
+                    return jsonify(out), 500
+                if not success:
+                    err_msg = (response_data or {}).get("message", "close placement failed")
+                    out["status"] = "error"
+                    out["message"] = err_msg
+                    return jsonify(out), 502
+                close_order_id = (
+                    (response_data or {}).get("orderid")
+                    or (response_data or {}).get("order_id")
+                )
+                # Record the close as a synthesised signal row with signal_id
+                # = "<entry>__exit". Lets the fill_poller track it normally
+                # and avoids any cascade collision with __sl / __tp suffixes.
+                record_signal(
+                    inbox_id=inbox.id,
+                    signal_id=signal_id + "__exit",
+                    src_ip=src_ip,
+                    payload={
+                        "_exit_of": signal_id,
+                        "symbol": symbol, "exchange": exchange,
+                        "action": opposite, "quantity": close_qty,
+                        "pricetype": "MARKET", "product": product,
+                    },
+                    status="placed",
+                    broker_used=broker,
+                    broker_order_id=close_order_id,
+                )
+                # Mark the original signal as cancelled in our log — the
+                # position it represented is being unwound.
+                update_signal_status(
+                    inbox.id, signal_id, "cancelled",
+                    error_message=f"exit: closed via __exit order {close_order_id}",
+                )
+                action_taken = "closed"
+                out["close_order_id"] = close_order_id
+                out["closed_quantity"] = close_qty
+
+    else:
+        # cancelled / rejected — nothing to do at the broker.
+        update_signal_status(
+            inbox.id, signal_id, "cancelled",
+            error_message=f"exit: order already in terminal state '{broker_status}'",
+        )
+        action_taken = "already_closed"
+
+    out["action_taken"] = action_taken
+
+    # Clear any pending bracket spec — same reason as cancel webhook.
+    clear_pending_bracket(inbox.id, signal_id)
+
+    # Cascade-cancel any bracket children. If parent EXIT closed an open
+    # position, leaving SL/TP children open would risk re-opening it on a
+    # spurious match. If the parent was just cancelled and never filled,
+    # children don't exist yet (Phase 3.1 places them only after fill) —
+    # this is a fast no-op.
+    cascade = _cascade_cancel_bracket_children(
+        inbox=inbox, parent_signal_id=signal_id,
+        auth_token=auth_token, broker=broker,
+    )
+    if cascade:
+        out["bracket_cascade"] = cascade
+
+    return jsonify(out), 200
+
+
+# ---------------------------------------------------------------------------
 # Positionbook readback (no session — same Bearer api_key as webhook)
 # ---------------------------------------------------------------------------
 
