@@ -67,6 +67,19 @@ def _install() -> None:
     source_tuple = (src, 0)
     _orig_init = HTTPConnection.__init__
 
+    # Phase 7 — IPv4-only broker hosts (Arihant TradeBridge etc.) cannot
+    # use a CLIENT_IPV6 bind: their DNS only has A records. Skip the bind
+    # for those hosts so requests/urllib3 falls back to direct IPv4 egress.
+    # Per-customer v4 proxying for the urllib3 path needs explicit proxies={}
+    # at the call site (broker plugins set REQUESTS_PROXIES per their needs).
+    try:
+        from utils.decodo_proxy import DEFAULT_V4_HOSTS as _V4_HOSTS
+    except Exception:
+        _V4_HOSTS = set()
+
+    def _is_v4_only_broker(host: str | None) -> bool:
+        return bool(host) and host.lower() in _V4_HOSTS
+
     def _patched_init(self, *args, **kwargs):
         # Honor explicit caller-supplied source_address. Only inject ours
         # when the caller didn't ask for anything.
@@ -74,7 +87,7 @@ def _install() -> None:
             host = kwargs.get("host")
             if host is None and args:
                 host = args[0]
-            if not _looks_local(host):
+            if not _looks_local(host) and not _is_v4_only_broker(host):
                 kwargs["source_address"] = source_tuple
         _orig_init(self, *args, **kwargs)
 
@@ -84,6 +97,9 @@ def _install() -> None:
     # urllib3's create_connection() may prefer an A record for dual-stack
     # broker hostnames, attempt to bind an IPv6 source on an AF_INET
     # socket, and fail with EAI_FAMILY masquerading as a DNS error.
+    # Phase 7 caveat: dual-stack only — when a v4-only broker is the target,
+    # the patched connection above skips the bind and the kernel resolves A
+    # records on its own (not via this gai_family override).
     if is_ipv6:
         _u3c.allowed_gai_family = lambda: socket.AF_INET6
 
