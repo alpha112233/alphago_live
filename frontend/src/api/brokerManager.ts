@@ -44,6 +44,7 @@ export interface BrokerInstructions {
   client_ipv6: string
   client_ipv4_primary?: string
   client_ipv4_secondary?: string
+  client_ipv4_pool?: string[]
   shared_host_ipv4?: string
 }
 
@@ -51,6 +52,7 @@ export interface HostInfo {
   client_ipv6: string
   client_ipv4_primary?: string
   client_ipv4_secondary?: string
+  client_ipv4_pool?: string[]
   shared_host_ipv4?: string
   host_server: string
   redirect_url_pattern: string
