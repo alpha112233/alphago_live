@@ -588,14 +588,32 @@ def save_credentials_endpoint():
 
 @broker_credentials_bp.route("/credentials/<broker>/activate", methods=["PUT"])
 def activate_credentials_endpoint(broker: str):
-    """Make `broker` the active broker for this user. Syncs creds to .env."""
+    """Make `broker` the active broker for this user. Syncs creds to .env.
+
+    Phase 7.6 gate: if the broker is v4-only AND this container has no
+    dedicated v4 IP yet, refuse with 409 + needs_v4_ip flag so the
+    frontend renders a 'Request dedicated IPv4 IP' button instead of a
+    raw error."""
     from database.broker_creds_db import activate_broker, get_broker_creds
+    from utils.decodo_proxy import broker_needs_v4
 
     user_id = _current_user_id()
     if user_id is None:
         return jsonify({"status": "error", "message": "Not authenticated"}), 401
 
     broker = (broker or "").strip().lower()
+
+    if broker_needs_v4(broker) and not (os.getenv("EGRESS_V4_PRIMARY_IP") or "").strip():
+        return jsonify({
+            "status": "error",
+            "needs_v4_ip": True,
+            "message": (
+                f"{broker} requires a dedicated IPv4 IP for broker API access. "
+                "Click 'Request dedicated IPv4 IP', whitelist the assigned IP in "
+                f"your {broker} developer console, then activate again."
+            ),
+        }), 409
+
     if not activate_broker(user_id, broker):
         return jsonify({"status": "error", "message": f"broker '{broker}' is not saved"}), 404
 
@@ -605,6 +623,65 @@ def activate_credentials_endpoint(broker: str):
         return jsonify({"status": "error", "message": f"activated but env sync failed: {err}"}), 500
 
     return jsonify({"status": "success", "broker": broker})
+
+
+@broker_credentials_bp.route("/credentials/request-v4-ip", methods=["POST"])
+def request_v4_ip_endpoint():
+    """Phase 7.6 — customer-facing button that asks hostingsol to allocate a
+    Decodo v4 IP for this container. Returns the allocated IP for the
+    dashboard to display + tells the customer the container will restart in
+    a few seconds (so they whitelist the IP at the broker before retrying
+    activation).
+
+    Body (optional): {"broker": "arihant"} — for the Telegram alert text on
+    exhaustion. Auth: customer session (must be logged in)."""
+    from flask import session
+    import requests as _rq
+
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+
+    body = request.get_json(silent=True) or {}
+    broker = (body.get("broker") or "").strip().lower()
+
+    secret = (os.getenv("PROVISIONER_SHARED_SECRET") or "").strip()
+    hsol_base = (os.getenv("HOSTINGSOL_API_BASE") or "").rstrip("/")
+    subdomain = (os.getenv("HSOL_SUBDOMAIN") or "").strip()
+    if not secret or not hsol_base or not subdomain:
+        return jsonify({
+            "status": "error",
+            "message": "v4 allocator not configured on this container "
+                       "(PROVISIONER_SHARED_SECRET / HOSTINGSOL_API_BASE / HSOL_SUBDOMAIN)"
+        }), 503
+
+    try:
+        r = _rq.post(
+            f"{hsol_base}/api/clients/{subdomain}/allocate-v4",
+            headers={"Authorization": f"Bearer {secret}"},
+            json={"broker": broker},
+            timeout=120,
+        )
+        # 503 with status=exhausted is a clean signal — propagate.
+        if r.status_code == 503:
+            return jsonify(r.json() if r.headers.get("content-type", "").startswith("application/json") else {
+                "status": "exhausted",
+                "message": "v4 IP pool exhausted",
+            }), 503
+        r.raise_for_status()
+        result = r.json()
+        return jsonify({
+            "status": "success",
+            "ip": result.get("ip"),
+            "message": (
+                f"Allocated IP {result.get('ip')}. Your container is restarting now "
+                f"(takes ~30 seconds). After it's back, whitelist {result.get('ip')} "
+                f"in your {broker} developer console, then activate the broker again."
+            ),
+        })
+    except _rq.HTTPError as e:
+        return jsonify({"status": "error", "message": f"allocator http error: {e}"}), 502
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"allocator call failed: {e}"}), 502
 
 
 @broker_credentials_bp.route("/credentials/<broker>", methods=["DELETE"])

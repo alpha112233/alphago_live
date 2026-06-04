@@ -107,8 +107,32 @@ export async function saveBroker(payload: SaveBrokerPayload): Promise<{ broker: 
 }
 
 export async function activateBroker(broker: string): Promise<void> {
-  const r = await webClient.put(`/api/broker/credentials/${broker}/activate`)
-  if (r.data?.status !== 'success') throw new Error(r.data?.message || 'activate failed')
+  try {
+    const r = await webClient.put(`/api/broker/credentials/${broker}/activate`)
+    if (r.data?.status !== 'success') throw new Error(r.data?.message || 'activate failed')
+  } catch (e: any) {
+    // 409 with needs_v4_ip is a clean signal for the dashboard to show
+    // the "Request dedicated IPv4 IP" button. Re-raise with the flag so
+    // the page can route it correctly.
+    const d = e?.response?.data
+    if (e?.response?.status === 409 && d?.needs_v4_ip) {
+      const err: any = new Error(d.message || 'Dedicated IPv4 IP required')
+      err.needs_v4_ip = true
+      throw err
+    }
+    throw e
+  }
+}
+
+export interface RequestV4IpResult {
+  ip: string
+  message: string
+}
+
+export async function requestV4Ip(broker: string): Promise<RequestV4IpResult> {
+  const r = await webClient.post('/api/broker/credentials/request-v4-ip', { broker })
+  if (r.data?.status !== 'success') throw new Error(r.data?.message || 'request-v4-ip failed')
+  return { ip: r.data.ip, message: r.data.message }
 }
 
 export async function deleteBroker(broker: string): Promise<void> {
