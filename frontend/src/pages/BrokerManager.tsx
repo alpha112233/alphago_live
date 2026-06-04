@@ -541,7 +541,28 @@ export default function BrokerManager() {
                 IndMoney. Unique to your instance — no scarcity, no shared-IP risk.
               </p>
             </div>
-            {hostInfo.client_ipv4_primary ? (
+            {hostInfo.client_ipv4_pool && hostInfo.client_ipv4_pool.length > 1 ? (
+              <div>
+                <p className="text-xs font-semibold text-emerald-300 mb-1">
+                  IPv4 ISP Pool (whitelist all at IPv4-only brokers)
+                </p>
+                <div className="space-y-1">
+                  {hostInfo.client_ipv4_pool.map((ip) => (
+                    <CopyableCode
+                      key={ip}
+                      value={ip}
+                      label={ip === hostInfo.client_ipv4_primary ? "IPv4 (preferred):" : "IPv4:"}
+                    />
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground pt-1">
+                  Use for: <strong>Arihant Capital</strong> and any other broker whose API
+                  endpoint is IPv4-only. Outbound calls route via a Vodafone Idea ISP pool in
+                  Mumbai, exclusive to our infrastructure. Whitelist <strong>all</strong> IPs
+                  above at each IPv4-only broker — any of them may show up on a given request.
+                </p>
+              </div>
+            ) : hostInfo.client_ipv4_primary ? (
               <>
                 <div>
                   <p className="text-xs font-semibold text-emerald-300 mb-1">

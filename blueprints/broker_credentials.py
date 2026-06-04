@@ -652,6 +652,13 @@ def broker_instructions_endpoint(broker: str):
         # transparent failover when the primary is unreachable.
         "client_ipv4_primary": os.getenv("EGRESS_V4_PRIMARY_IP", ""),
         "client_ipv4_secondary": os.getenv("EGRESS_V4_SECONDARY_IP", ""),
+        # V1 ship 2026-06-05: shared-pool routing — every customer's
+        # traffic load-balances across all IPs in EGRESS_V4_POOL_IPS. The
+        # primary is the customer's "preferred" IP but ANY pool IP can
+        # show up at the broker. Customer must whitelist ALL of these.
+        "client_ipv4_pool": [
+            ip.strip() for ip in (os.getenv("EGRESS_V4_POOL_IPS", "") or "").split(",") if ip.strip()
+        ],
         # Legacy shared host v4 — kept for back-compat; dashboard shows
         # it only as a fallback when no per-customer Decodo IP is set.
         "shared_host_ipv4": os.getenv("SHARED_HOST_IPV4", ""),
@@ -681,6 +688,10 @@ def host_info_endpoint():
         # transparent failover when the primary is unreachable.
         "client_ipv4_primary": os.getenv("EGRESS_V4_PRIMARY_IP", ""),
         "client_ipv4_secondary": os.getenv("EGRESS_V4_SECONDARY_IP", ""),
+        # V1 ship 2026-06-05: shared-pool routing — see /credentials/<broker>.
+        "client_ipv4_pool": [
+            ip.strip() for ip in (os.getenv("EGRESS_V4_POOL_IPS", "") or "").split(",") if ip.strip()
+        ],
         # Legacy shared host v4 — kept for back-compat; dashboard shows
         # it only as a fallback when no per-customer Decodo IP is set.
         "shared_host_ipv4": os.getenv("SHARED_HOST_IPV4", ""),
