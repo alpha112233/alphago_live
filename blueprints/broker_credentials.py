@@ -645,6 +645,13 @@ def broker_instructions_endpoint(broker: str):
         # developer console. Pulled from os.environ so it stays in sync
         # with what the source-bind patch will actually use at runtime.
         "client_ipv6": os.getenv("CLIENT_IPV6", ""),
+        # Shared host IPv4 — used as the egress source for IPv4-only
+        # broker hosts (Arihant TradeBridge, HDFC InvestRight, etc.).
+        # NOT per-customer; every customer on this server shares it.
+        # Customers must whitelist THIS at IPv4-only brokers, and their
+        # client_ipv6 at IPv6-capable brokers. See setup guides per
+        # broker for which to use.
+        "shared_host_ipv4": os.getenv("SHARED_HOST_IPV4", ""),
     })
 
 
@@ -664,6 +671,13 @@ def host_info_endpoint():
         "status": "success",
         "data": {
             "client_ipv6": os.getenv("CLIENT_IPV6", ""),
+        # Shared host IPv4 — used as the egress source for IPv4-only
+        # broker hosts (Arihant TradeBridge, HDFC InvestRight, etc.).
+        # NOT per-customer; every customer on this server shares it.
+        # Customers must whitelist THIS at IPv4-only brokers, and their
+        # client_ipv6 at IPv6-capable brokers. See setup guides per
+        # broker for which to use.
+        "shared_host_ipv4": os.getenv("SHARED_HOST_IPV4", ""),
             "host_server": host,
             "redirect_url_pattern": f"{host}/<broker>/callback" if host else "",
         },

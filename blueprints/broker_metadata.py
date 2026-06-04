@@ -562,11 +562,22 @@ Official docs: https://developer.paytmmoney.com/docs/
 
 **Cost:** Free for Arihant trading account holders.
 
-⚠️ **IPv4-only host:** Arihant's API endpoint (`tradebridge.arihantplus.com`)
-is IPv4-only as of 2026-05-25. Hostingsol customers on the IPv6-only egress
-tunnel cannot reach it; this broker is not in `SUPPORTED_BROKERS` for that
-infrastructure. If you're running AlphaGo Live on your own dual-stack
-network you can use Arihant directly — the steps below apply.
+⚠️ **IPv4 whitelisting required:** Arihant's API endpoint
+(`tradebridge.arihantplus.com`) is IPv4-only. AlphaQuark routes Arihant
+traffic through our **shared server IPv4** (shown at the top of this
+page in the green "Static IPv4" callout), instead of the per-customer
+IPv6 used for other brokers. Whitelist that v4 address in Arihant's
+developer portal where it asks for "Allowed IPs". Limitations of the
+shared-IP path:
+
+- Every Arihant customer on this server shares the same egress IP. If
+  Arihant rate-limits or bans the IP, all customers lose Arihant access
+  at once.
+- If we migrate the server (rare), the v4 changes and you must re-whitelist.
+
+We're in the process of building **per-customer IPv4** to remove this
+constraint — until then, the shared path is the only way to use Arihant
+on AlphaQuark.
 
 1. Open **https://tradebridge.arihantplus.com/dev-portal** (the TradeBridge
    L2 developer portal) and sign in with your Arihant trading credentials.
@@ -576,22 +587,28 @@ network you can use Arihant directly — the steps below apply.
      instead of OAuth; this field can be blank or `https://localhost`).
 3. After app creation the portal shows an **App ID** (called `api-key` in
    the API). Copy it.
-4. Paste into the form here:
+4. **Whitelist our shared server IPv4** (mandatory before any order will
+   succeed): In the same developer portal, open your app → **API Settings
+   → Allowed IPs** (the exact menu varies; if you can't find it, contact
+   Arihant support and ask them to whitelist the IP listed at the top of
+   this page in the green "Static IPv4" callout). Paste only that IPv4
+   address — no CIDR notation, no port. Save.
+5. Paste into the form here:
    - **Arihant App ID:** the App ID from step 3.
    - **api_secret** field: leave empty — it will be auto-populated below.
-5. Save (don't activate yet) → click **Connect Arihant Capital**.
-6. You'll be redirected to a two-step OTP page hosted by AlphaGo:
+6. Save (don't activate yet) → click **Connect Arihant Capital**.
+7. You'll be redirected to a two-step OTP page hosted by AlphaQuark:
    - **Step 1:** enter your Arihant **User ID** + **Trading Password**.
      We trigger Arihant's `/auth/v1/login` which dispatches an OTP to
      your registered mobile/email.
    - **Step 2:** enter the OTP. We verify it via `/auth/v1/verify-otp`,
      receive a long-lived **refresh token**, and persist it as
      `user_id:::refresh_token` in your `api_secret` field.
-7. After successful verification you're returned to the broker page; the
+8. After successful verification you're returned to the broker page; the
    broker now shows as Connected.
-8. From the next day onward, the daily auto-login at 08:00 IST uses the
+9. From the next day onward, the daily auto-login at 08:00 IST uses the
    stored refresh token to mint a fresh access token without any further
-   OTP prompts. You only need to repeat steps 5–6 if Arihant invalidates
+   OTP prompts. You only need to repeat steps 6–7 if Arihant invalidates
    your refresh token (typically every 6 months, or when you change your
    trading password).
 
