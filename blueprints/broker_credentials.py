@@ -710,6 +710,7 @@ def broker_instructions_endpoint(broker: str):
     if not session.get("user"):
         return jsonify({"status": "error", "message": "Not authenticated"}), 401
 
+    from utils.decodo_proxy import broker_needs_v4
     broker = (broker or "").strip().lower()
     redirect_url = _build_redirect_url(broker)
     return jsonify({
@@ -718,6 +719,10 @@ def broker_instructions_endpoint(broker: str):
         "fields": get_fields(broker),
         "instructions_md": get_instructions(broker, redirect_url),
         "redirect_url": redirect_url,
+        # True when this broker's API endpoint is IPv4-only and the customer
+        # must whitelist their dedicated IPv4 (not IPv6). Drives which IP the
+        # frontend renders as the focused "Whitelist this IP" callout.
+        "v4_required": broker_needs_v4(broker),
         # The /128 IPv6 the customer must whitelist in their broker's
         # developer console. Pulled from os.environ so it stays in sync
         # with what the source-bind patch will actually use at runtime.

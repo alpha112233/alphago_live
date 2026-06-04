@@ -46,6 +46,7 @@ export interface BrokerInstructions {
   client_ipv4_secondary?: string
   client_ipv4_pool?: string[]
   shared_host_ipv4?: string
+  v4_required?: boolean
 }
 
 export interface HostInfo {

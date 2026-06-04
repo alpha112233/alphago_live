@@ -279,16 +279,32 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
                   {instructions.instructions_md}
                 </pre>
 
-                {/* The two values the customer needs to paste into their
+                {/* The values the customer needs to paste into their
                     broker's developer console — surface them prominently
                     rather than leave the customer to scroll through the
-                    markdown looking for them. */}
+                    markdown looking for them. v4-only brokers (Arihant,
+                    ICICI Direct, HDFC InvestRight) get the IPv4 here;
+                    everything else gets the dedicated IPv6. */}
                 <div className="space-y-2 pt-1 border-t">
-                  {instructions.client_ipv6 && (
-                    <CopyableCode
-                      value={instructions.client_ipv6}
-                      label="Whitelist IP:"
-                    />
+                  {instructions.v4_required ? (
+                    instructions.client_ipv4_primary ? (
+                      <CopyableCode
+                        value={instructions.client_ipv4_primary}
+                        label="Whitelist this IPv4:"
+                      />
+                    ) : (
+                      <p className="text-xs text-amber-300">
+                        This broker needs an IPv4 IP. Click "Request dedicated IPv4 IP"
+                        below to allocate one, then whitelist it at the broker.
+                      </p>
+                    )
+                  ) : (
+                    instructions.client_ipv6 && (
+                      <CopyableCode
+                        value={instructions.client_ipv6}
+                        label="Whitelist this IPv6:"
+                      />
+                    )
                   )}
                   {instructions.redirect_url && (
                     <CopyableCode
