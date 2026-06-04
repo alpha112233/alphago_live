@@ -56,6 +56,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_V4_HOSTS = {
     "tradebridge.arihantplus.com",       # Arihant TradeBridge
     "developer.hdfcsec.com",             # HDFC InvestRight
+    "api.icicidirect.com",               # ICICI Direct Breeze
     "api.mstock.trade",                  # m.stock
     "openapi.motilaloswal.com",          # Motilal Oswal
     "ttblaze.compositedge.com",          # Compositedge
@@ -70,22 +71,19 @@ DEFAULT_V4_HOSTS = {
 
 
 # Broker-name → does this broker need a v4 IP allocated. Used by
-# broker_credentials.py to decide whether to gate activation on a
-# dedicated v4 IP being assigned (Phase 7.6 allocate-on-demand).
-# Keep the lowercase names aligned with broker_creds_db.broker values.
+# broker_credentials.py to gate activation on a dedicated v4 IP being
+# assigned (Phase 7.6 allocate-on-demand).
+#
+# Keep this aligned with what's configurable in broker_metadata.py:FIELDS.
+# Adding a name here that's not in FIELDS is harmless (the user can never
+# trigger the activation path for it), but adding a v4-only broker to
+# FIELDS without listing it here SILENTLY skips the v4 IP gate and the
+# customer's traffic falls through to the v6 default which the broker
+# will reject. Keep both lists synced.
 V4_ONLY_BROKERS = {
-    "arihant",
-    "hdfcsec",
-    "mstock",
-    "motilaloswal",
-    "compositedge",
-    "shoonya",
-    "firstock",
-    "tradejini",
-    "pocketful",
-    "wisdom",
-    "zebu",
-    "samco",
+    "arihant",       # tradebridge.arihantplus.com
+    "icicidirect",   # api.icicidirect.com (Breeze)
+    "hdfcsec",       # developer.hdfcsec.com (InvestRight)
 }
 
 
