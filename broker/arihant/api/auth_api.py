@@ -111,6 +111,12 @@ def authenticate_broker(code):  # noqa: ARG001 — kept for OpenAlgo contract
 
     If no refresh token is stored yet, returns (None, error message
     explaining the customer needs to complete the OTP login first).
+
+    **Refresh-token rotation:** every successful refresh-access-token call
+    consumes the previous refresh_token and returns a NEW one. We persist
+    the rotated value back to broker_creds_db so the NEXT refresh call
+    works. Failure to persist = the next refresh dies with 'Session expired'
+    and the customer has to redo the OTP step. Verified on 2026-06-05.
     """
     try:
         api_key = os.getenv("BROKER_API_KEY", "").strip()
@@ -130,6 +136,33 @@ def authenticate_broker(code):  # noqa: ARG001 — kept for OpenAlgo contract
         access_token = data.get("accessToken")
         if not access_token:
             return None, f"Arihant refresh failed: {resp.get('infoMsg', resp)}"
+
+        # Capture and persist the rotated refresh token, if Arihant returned one.
+        new_refresh_token = data.get("refreshToken")
+        if new_refresh_token and new_refresh_token != refresh_token:
+            new_secret = f"{user_id}:::{new_refresh_token}"
+            os.environ["BROKER_API_SECRET"] = new_secret
+            try:
+                from database.broker_creds_db import (
+                    add_or_update_broker_creds, get_broker_creds,
+                )
+                from database.user_db import User, db_session
+                admin = db_session.query(User).filter_by(is_admin=True).first()
+                if admin is not None:
+                    existing = get_broker_creds(admin.id, "arihant") or {}
+                    add_or_update_broker_creds(
+                        user_id=admin.id, broker="arihant",
+                        api_key=existing.get("api_key") or api_key,
+                        api_secret=new_secret,
+                    )
+                    log.info("Arihant: rotated refresh_token persisted")
+                else:
+                    log.warning("Arihant: refresh-rotate seen but no admin user — NOT persisted")
+            except Exception as persist_err:
+                log.exception(f"Arihant: refresh-rotate persist failed: {persist_err}")
+                # Don't fail the auth call — the access_token we got is still
+                # valid for its lifetime; the next refresh will fail and the
+                # customer will be prompted to redo OTP.
         return access_token, None
     except Exception as e:
         log.exception("Arihant authenticate_broker failed")
