@@ -275,9 +275,13 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
               {/* Instructions */}
               <div className="rounded-md border bg-muted/50 p-4 space-y-3">
                 <h4 className="text-sm font-medium">Setup instructions</h4>
-                <pre className="whitespace-pre-wrap text-xs leading-relaxed font-sans text-muted-foreground">
-                  {instructions.instructions_md}
-                </pre>
+                <div className="text-xs leading-relaxed text-muted-foreground space-y-0.5">
+                  {instructions.instructions_md.split('\n').map((line, i) => (
+                    <div key={i} className="whitespace-pre-wrap break-words">
+                      {line.length === 0 ? ' ' : <InstructionsLine line={line} />}
+                    </div>
+                  ))}
+                </div>
 
                 {/* The values the customer needs to paste into their
                     broker's developer console — surface them prominently
@@ -370,6 +374,82 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
 }
 
 // ----- main page ------------------------------------------------------------
+
+// Strip surrounding markdown emphasis (`**bold**`, `*italic*`) and bare
+// `\`code\`` ticks. Per-line tokens — not a full markdown parser.
+function stripInline(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+}
+
+// Render a single line of the instructions block with URLs auto-detected
+// and rendered as clickable + copyable inline links. Strips simple markdown
+// (**bold**, `code`) so URLs aren't surrounded by stray asterisks/backticks.
+function InstructionsLine({ line }: { line: string }) {
+  const URL_RE = /\bhttps?:\/\/[^\s)`'"<>]+/g
+  const clean = stripInline(line)
+  const parts: Array<{ type: 'text' | 'url'; value: string }> = []
+  let lastIdx = 0
+  for (const m of clean.matchAll(URL_RE)) {
+    if (m.index! > lastIdx) parts.push({ type: 'text', value: clean.slice(lastIdx, m.index!) })
+    parts.push({ type: 'url', value: m[0] })
+    lastIdx = m.index! + m[0].length
+  }
+  if (lastIdx < clean.length) parts.push({ type: 'text', value: clean.slice(lastIdx) })
+  if (parts.length === 0) return <>{clean}</>
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.type === 'text' ? (
+          <span key={i}>{p.value}</span>
+        ) : (
+          <InlineLink key={i} url={p.value} />
+        ),
+      )}
+    </>
+  )
+}
+
+function InlineLink({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false)
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = url
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1200)
+    }
+  }
+  return (
+    <span className="inline-flex items-baseline gap-1 align-baseline">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-primary underline underline-offset-2 break-all hover:text-primary/80"
+      >
+        {url}
+      </a>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy URL"
+        className="inline-flex items-center justify-center h-4 w-4 text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {copied ? <CheckCircle2 className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+      </button>
+    </span>
+  )
+}
 
 function CopyableCode({ value, label }: { value: string; label?: string }) {
   const [copied, setCopied] = useState(false)
