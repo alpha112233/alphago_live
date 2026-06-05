@@ -48,7 +48,7 @@ def _headers(api_key: str, access_token: str | None = None) -> dict:
         "Content-Type": "application/json",
         "Accept": "application/json",
         "api-key": api_key,
-        "source": os.getenv("ARIHANT_SOURCE", "WEB").strip() or "WEB",
+        "source": os.getenv("ARIHANT_SOURCE", "SDK").strip() or "SDK",
     }
     if access_token:
         h["Authorization"] = f"Bearer {access_token}"
