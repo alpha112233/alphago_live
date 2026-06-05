@@ -135,6 +135,16 @@ def authenticate_broker(code):  # noqa: ARG001 — kept for OpenAlgo contract
         data = (resp or {}).get("data") or {}
         access_token = data.get("accessToken")
         if not access_token:
+            # Refresh-access-token failed. Three possibilities:
+            #  (a) refresh_token actually expired (~6 months) — TOTP adapter
+            #      can re-establish the chain hands-free if all 3 opt fields set
+            #  (b) Arihant API hiccup — adapter would fail same way, surface error
+            #  (c) refresh_token corrupted in DB — same as (a)
+            # Try the TOTP adapter as a fallback before giving up.
+            adapter_tok = _try_totp_adapter_fallback(api_key, user_id,
+                                                    resp.get("infoMsg") or "")
+            if adapter_tok:
+                return adapter_tok, None
             return None, f"Arihant refresh failed: {resp.get('infoMsg', resp)}"
 
         # Capture and persist the rotated refresh token, if Arihant returned one.
@@ -167,6 +177,58 @@ def authenticate_broker(code):  # noqa: ARG001 — kept for OpenAlgo contract
     except Exception as e:
         log.exception("Arihant authenticate_broker failed")
         return None, f"An exception occurred: {e}"
+
+
+def _try_totp_adapter_fallback(api_key: str, user_id: str,
+                                refresh_failed_reason: str) -> str | None:
+    """When the stored refresh_token won't mint a fresh access_token
+    (typical at the 6-month rotation boundary), try the hands-free TOTP
+    adapter. Returns the new access_token on success, None otherwise.
+
+    Reads the optional creds from broker_creds_db — if any of user_id,
+    password, totp_seed are missing, fails quietly (customer hasn't opted
+    into hands-free renewal yet, so we surface the original refresh-token
+    error)."""
+    try:
+        from database.broker_creds_db import get_active_broker_creds
+        from database.user_db import User, db_session
+        admin = db_session.query(User).filter_by(is_admin=True).first()
+        if admin is None:
+            return None
+        creds = get_active_broker_creds(admin.id) or {}
+        if (creds.get("broker") or "").lower() != "arihant":
+            return None
+
+        opt_user_id = (creds.get("client_code") or user_id or "").strip()
+        opt_password = (creds.get("api_key_market") or "").strip()
+        opt_totp = (creds.get("totp_seed") or "").strip()
+        if not (opt_user_id and opt_password and opt_totp):
+            log.info(
+                "Arihant refresh failed (%s) and TOTP-adapter fields not all set — "
+                "customer needs to redo OTP page at /broker/arihant/login.",
+                refresh_failed_reason,
+            )
+            return None
+    except Exception as e:
+        log.warning(f"Arihant TOTP fallback: cred lookup failed (skipping): {e}")
+        return None
+
+    try:
+        from broker_login_adapters.arihant import login as arihant_adapter_login
+        result = arihant_adapter_login({
+            "api_key": api_key,
+            "user_id": opt_user_id,
+            "password": opt_password,
+            "totp_seed": opt_totp,
+        })
+        if not result.get("ok"):
+            log.error(f"Arihant TOTP fallback adapter failed: {result.get('error')}")
+            return None
+        log.info("Arihant: TOTP adapter successfully re-established the refresh-token chain")
+        return result.get("access_token")
+    except Exception as e:
+        log.exception(f"Arihant TOTP fallback raised: {e}")
+        return None
 
 
 def _safe_json(resp: httpx.Response) -> dict:

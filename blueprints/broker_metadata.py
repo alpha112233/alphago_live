@@ -177,6 +177,20 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "api_secret", "label": "Refresh token (auto-set by Connect button — leave blank)",
          "type": "password", "required": False,
          "help": "DON'T enter manually. After you save the API Key and click 'Connect Arihant Capital', a two-step OTP page opens; once you complete it, this field is auto-populated with your user ID + refresh token. The daily 08:00 IST auto-login uses it to mint a fresh access token."},
+        # OPTIONAL trio for hands-free 6-monthly refresh-token renewal
+        # (see broker_login_adapters/arihant.py). Filling all three lets
+        # the daily auto-login adapter re-mint the refresh token via
+        # login + TOTP when the previous one expires, without you
+        # redoing the OTP page. Leaving any blank reverts to manual.
+        {"name": "client_code", "label": "Arihant User ID (optional — for hands-free renewal)",
+         "type": "text", "required": False,
+         "help": "Your Arihant Client Code / Trading User ID (e.g. '284300014'). Required only if you also fill the Trading Password and TOTP Seed below. Stored in plaintext (it's not secret on its own)."},
+        {"name": "api_key_market", "label": "Arihant Trading Password (optional — for hands-free renewal)",
+         "type": "password", "required": False,
+         "help": "Your Arihant trading password (the one you use at tradebridge.arihantplus.com). Stored Fernet-encrypted at rest using your per-instance API_KEY_PEPPER. Required only with User ID + TOTP Seed for hands-free 6-monthly refresh-token re-mint."},
+        {"name": "totp_seed", "label": "Arihant TOTP Seed (optional — for hands-free renewal)",
+         "type": "password", "required": False,
+         "help": "Base32 TOTP seed from your TradeBridge portal → Setup TOTP. Stored Fernet-encrypted. With this + User ID + Trading Password set, the daily auto-login cron generates the OTP via pyotp at refresh-token re-mint time instead of waiting for SMS, so you never have to redo the OTP page by hand."},
     ],
     # ICICI Direct Breeze API — full port (feat/icici-direct-full-port).
     # Customer pastes app_key + secret_key once; daily session_token is
@@ -586,6 +600,21 @@ Click **Connect Arihant Capital**. A two-step page opens:
   registered mobile number — any of the three works) and **Trading
   Password**. Arihant sends an OTP to your registered mobile/email.
 - Enter the OTP. We complete the login and store your refresh token.
+
+**5. (Optional) Enable hands-free renewal**
+By default you'll need to redo step 4 once every ~6 months when Arihant
+rotates your refresh token. To skip even that manual step:
+- At https://tradebridge.arihantplus.com/ → **Setup TOTP**, enable TOTP
+  2FA and copy the base32 seed (and save the QR for your authenticator
+  app).
+- Back here, fill in the three optional fields below the Refresh token:
+  **User ID** (your Arihant Client Code), **Trading Password**, **TOTP
+  Seed**. Save.
+- From then on, when the stored refresh token expires the daily 08:00
+  IST auto-login will use these three values + pyotp to log in and mint
+  a fresh refresh token automatically. No more manual OTP.
+- All three are Fernet-encrypted at rest with your per-instance pepper.
+  Leave any blank → you keep the default manual-every-6-months behavior.
 
 You're connected. From the next day onward the 08:00 IST auto-login
 mints a fresh access token from your refresh token — no further OTP
