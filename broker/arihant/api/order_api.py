@@ -100,10 +100,19 @@ def _request(route: str, method: str, auth: str, body: dict | None = None,
         parsed = resp.json()
     except Exception:
         pass
+    # Known Arihant "your auth needs refresh" infoIDs:
+    #   EG004  — "Session expired" (mid-day stale access_token)
+    #   EGN006 — "Uh-oh, your login session has expired" (different surface, same root cause)
+    #   AU004  — sometimes used too
+    # Also match via message text as a defensive belt+braces — Arihant has
+    # added new infoIDs in the past without bumping the message.
+    _SESSION_EXPIRED_CODES = {"EG004", "EGN006", "AU004"}
+    _msg_lower = (parsed.get("infoMsg") or "").lower() if parsed else ""
     is_session_expired = (
         resp.status_code == 401
-        or (parsed is not None and (parsed.get("infoID") or "").upper() in ("EG004", "AU004")
-            and "session expired" in (parsed.get("infoMsg") or "").lower())
+        or (parsed is not None and (parsed.get("infoID") or "").upper() in _SESSION_EXPIRED_CODES)
+        or "session has expired" in _msg_lower
+        or "session expired" in _msg_lower
     )
     if is_session_expired and _retry_count < 1:
         new_token = _refresh_and_persist_auth_token()
