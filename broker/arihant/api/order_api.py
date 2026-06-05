@@ -89,20 +89,71 @@ def _request(route: str, method: str, auth: str, body: dict | None = None,
         return _request(route, method, auth, body=body, params=params,
                         with_geo=with_geo, _retry_count=_retry_count + 1)
 
+    # 401 / expired-access-token retry: Arihant's access_token has a much
+    # shorter lifetime than OpenAlgo's auth_db cache TTL (which holds until
+    # daily session expiry). When stale, we get 401 OR a 200 body with
+    # infoID=EG004 'Session expired'. Re-mint via authenticate_broker
+    # (which rotates the refresh_token and persists it), update auth_db
+    # (clears all caches), and retry the original call once.
+    parsed = None
+    try:
+        parsed = resp.json()
+    except Exception:
+        pass
+    is_session_expired = (
+        resp.status_code == 401
+        or (parsed is not None and (parsed.get("infoID") or "").upper() in ("EG004", "AU004")
+            and "session expired" in (parsed.get("infoMsg") or "").lower())
+    )
+    if is_session_expired and _retry_count < 1:
+        new_token = _refresh_and_persist_auth_token()
+        if new_token:
+            log.info(f"Arihant: re-minted access_token after Session-expired on {method} {url}; retrying once")
+            return _request(route, method, new_token, body=body, params=params,
+                            with_geo=with_geo, _retry_count=_retry_count + 1)
+
     if resp.status_code == 401:
-        log.error(f"Arihant 401 on {method} {url} — token likely expired")
+        log.error(f"Arihant 401 on {method} {url} — token re-mint also failed")
         return {"infoID": "AUTH_FAILED",
                 "infoMsg": "Unauthorized — access token invalid or expired",
                 "data": {}, "_http_status": 401}
-    try:
-        data = resp.json()
-    except Exception:
+    if parsed is None:
         return {"infoID": "PARSE_ERROR",
                 "infoMsg": f"HTTP {resp.status_code}: {resp.text[:200]}",
                 "_http_status": resp.status_code}
     if not (200 <= resp.status_code < 300):
-        data["_http_status"] = resp.status_code
-    return data
+        parsed["_http_status"] = resp.status_code
+    return parsed
+
+
+def _refresh_and_persist_auth_token() -> str | None:
+    """Re-mint a fresh Arihant access_token (rotates refresh_token via the
+    plugin's authenticate_broker) and write it back to OpenAlgo's auth_db
+    so subsequent calls hit a non-stale cache. Returns the new token or
+    None on failure."""
+    try:
+        from broker.arihant.api.auth_api import authenticate_broker
+        new_token, err = authenticate_broker(None)
+        if not new_token:
+            log.error(f"Arihant re-mint failed: {err}")
+            return None
+    except Exception as e:
+        log.exception(f"Arihant re-mint raised: {e}")
+        return None
+
+    # Persist into auth_db.Auth row so the cached-token paths see the
+    # fresh value. Use whatever username/name exists on the active row;
+    # for single-admin OpenAlgo installs there's only one.
+    try:
+        from database.auth_db import upsert_auth, Auth
+        row = Auth.query.filter_by(broker="arihant", is_revoked=False).first()
+        name = row.name if row else "default"
+        user_id = row.user_id if row else None
+        upsert_auth(name, new_token, "arihant", user_id=user_id)
+        log.info("Arihant: fresh access_token written to auth_db; cache cleared")
+    except Exception as e:
+        log.warning(f"Arihant: auth_db update failed (continuing — current call will still use fresh token): {e}")
+    return new_token
 
 
 def _is_success(resp: dict) -> bool:
