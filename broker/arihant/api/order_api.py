@@ -45,11 +45,14 @@ _DEFAULT_LONGITUDE = "72.8777"
 
 
 def _headers(auth: str, *, with_geo: bool = False) -> dict:
+    # 'source' must match what Arihant registered the api-key for. SDK is
+    # the partner-integration value; APPCONSOLE is the dev portal value.
+    # See broker/arihant/api/auth_api.py:_headers — same env override.
     h = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "api-key": os.getenv("BROKER_API_KEY", ""),
-        "source": "WEB",
+        "source": os.getenv("ARIHANT_SOURCE", "SDK").strip() or "SDK",
         "Authorization": f"Bearer {auth}" if not auth.lower().startswith("bearer ") else auth,
     }
     if with_geo:
