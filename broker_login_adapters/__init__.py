@@ -27,6 +27,7 @@ Contract:
 """
 
 from .aliceblue import login as aliceblue_login
+from .arihant import login as arihant_login
 from .dhan import login as dhan_login
 from .flattrade import login as flattrade_login
 from .fyers import login as fyers_login
@@ -46,6 +47,12 @@ ADAPTERS = {
     "groww": groww_login,
     "flattrade": flattrade_login,
     "indmoney": indmoney_login,
+    # arihant: refuses with a clear message if any of the 3 hands-free
+    # fields aren't set, so it's safe to register in the live registry.
+    # The refresh-token chain (cheaper) is tried first by the scheduler;
+    # this adapter only fires when the refresh-token has expired and the
+    # customer has filled in user_id + password + totp_seed.
+    "arihant": arihant_login,
 }
 
 # Adapters that exist in skeleton form but are NOT yet validated against a
@@ -58,14 +65,12 @@ ADAPTERS = {
 # in-module "Validation checklist" is complete (capture the real flow,
 # replace ASSUMED_* constants, confirm a real round-trip). See:
 #   broker_login_adapters/{icicidirect,hdfcsec,arihant}.py
-from .arihant import login as arihant_login
 from .hdfcsec import login as hdfcsec_login
 from .icicidirect import login as icicidirect_login
 
 _UNVERIFIED_ADAPTERS = {
     "icicidirect": icicidirect_login,
     "hdfcsec": hdfcsec_login,
-    "arihant": arihant_login,
 }
 
 # Optional cheap pre-save validators. Each returns {ok, error}. Used by
