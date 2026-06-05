@@ -558,59 +558,41 @@ Official docs: https://www.5paisa.com/developerapi/overview
 Official docs: https://developer.paytmmoney.com/docs/
 """,
     "arihant": """\
-### Connect Arihant Capital (TradeBridge L2)
+### Connect Arihant Capital
 
-**Cost:** Free for Arihant trading account holders.
+Free for Arihant trading account holders. Four steps. ~3 minutes.
 
-⚠️ **IPv4 whitelisting required:** Arihant's API endpoint
-(`tradebridge.arihantplus.com`) is IPv4-only. AlphaQuark routes Arihant
-traffic through your **dedicated IPv4** (shown at the top of this page
-under "Dedicated IPv4 — Primary"). Whitelist that v4 address in Arihant's
-developer portal where it asks for "Allowed IPs".
+**1. Get your API Key**
+Log in at https://tradebridge.arihantplus.com/ → **Apps** → if you don't
+already have one, click **+ New App** (any name works — e.g. `MyAlgo`).
+The page lists two columns side by side: **App Id** (a UUID) and
+**API Key** (a short string like `cqfS9tStGb1YClULn8`). **Copy the API
+Key — not the App Id.** That's the only value the broker plugin needs.
 
-If we've assigned you a **Secondary IPv4** (also visible at the top of
-this page), whitelist that too in the same field. The failover happens
-automatically — when the primary path is unreachable, outbound Arihant
-calls transparently use the secondary. From your perspective both
-addresses are equally valid and you don't pick one over the other.
+**2. Whitelist your dedicated IPv4 at Arihant**
+Arihant's API only accepts traffic from IPs you've pre-authorized.
+Whitelist the IPv4 shown above (under "Whitelist this IPv4") in your
+Arihant account's allowed-IPs setting. Orders fail with `IP_NOT_ALLOWED`
+until this is done.
 
-1. Open **https://tradebridge.arihantplus.com/dev-portal** (the TradeBridge
-   L2 developer portal) and sign in with your Arihant trading credentials.
-2. **Create App** → fill the form:
-   - **App Name:** anything (e.g. `MyAlgo`).
-   - **Callback URL:** (no redirect URL — Arihant uses an in-app OTP flow
-     instead of OAuth; this field can be blank or `https://localhost`).
-3. After app creation the portal's "My Apps" page shows TWO columns —
-   **App Id** (a UUID like `27c69533-d62a-43b6-...`) and **API Key**
-   (a short string like `cqfS9tStGb1YClULn8`). Copy the **API Key** value
-   only — that's the one the broker plugin uses. Ignore the App Id.
-4. **Whitelist your dedicated IPv4** (mandatory — orders fail until this
-   is done): In the same developer portal, open your app → **API Settings
-   → Allowed IPs** (the exact menu varies; if you can't find it, contact
-   Arihant support and ask them to whitelist the IPv4 shown at the top
-   of this page under "Dedicated IPv4 — Primary"). Paste only that IPv4
-   address — no CIDR notation, no port. Save.
-5. Paste into the form here:
-   - **Arihant API Key:** the API Key string from step 3 (NOT the App Id).
-   - **Refresh token** field: leave empty — it's auto-populated after the
-     OTP step below.
-6. Save (don't activate yet) → click **Connect Arihant Capital**.
-7. You'll be redirected to a two-step OTP page hosted by AlphaQuark:
-   - **Step 1:** enter your Arihant **User ID** + **Trading Password**.
-     We trigger Arihant's `/auth/v1/login` which dispatches an OTP to
-     your registered mobile/email.
-   - **Step 2:** enter the OTP. We verify it via `/auth/v1/verify-otp`,
-     receive a long-lived **refresh token**, and persist it as
-     `user_id:::refresh_token` in your `api_secret` field.
-8. After successful verification you're returned to the broker page; the
-   broker now shows as Connected.
-9. From the next day onward, the daily auto-login at 08:00 IST uses the
-   stored refresh token to mint a fresh access token without any further
-   OTP prompts. You only need to repeat steps 6–7 if Arihant invalidates
-   your refresh token (typically every 6 months, or when you change your
-   trading password).
+**3. Paste & Save**
+Paste your API Key into the **Arihant API Key** field below. Leave the
+**Refresh token** field empty — it's filled in automatically in step 4.
+Click **Save**.
 
-Official docs: https://tradebridge.arihantplus.com/docs (login required)
+**4. Connect (one-time OTP)**
+Click **Connect Arihant Capital**. A two-step page opens:
+- Enter your Arihant **User ID + Trading Password**. Arihant sends an
+  OTP to your registered mobile/email.
+- Enter the OTP. We complete the login and store your refresh token.
+
+You're connected. From the next day onward the 08:00 IST auto-login
+mints a fresh access token from your refresh token — no further OTP
+needed. If you ever see a "Session Expired" error (Arihant rotates
+refresh tokens roughly every 6 months, or when you change your trading
+password), just redo step 4.
+
+Official docs: https://tradebridge.arihantplus.com/docs
 """,
 }
 
