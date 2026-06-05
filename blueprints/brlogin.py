@@ -82,8 +82,17 @@ def broker_callback(broker, para=None):
     # real auth function. A bare GET with no args (operator pasting the
     # callback URL into the address bar while already logged in) still
     # gets the dashboard redirect — preserving the existing UX.
+    #
+    # Exception: brokers whose /callback GET handler renders an interactive
+    # multi-step HTML form (NOT an OAuth landing) must always run their
+    # handler so the form actually shows. Otherwise the customer clicks
+    # "Connect" from the broker-select page, the GET fires with no args,
+    # short-circuit takes them to the dashboard, and the OTP page they
+    # need to complete is silently skipped (verified 2026-06-05 for Arihant).
+    _INTERACTIVE_FORM_BROKERS = {"arihant"}
     has_auth_payload = request.method == "POST" or bool(request.args)
-    if session.get("logged_in") and not has_auth_payload:
+    if (session.get("logged_in") and not has_auth_payload
+            and broker not in _INTERACTIVE_FORM_BROKERS):
         # Store broker in session and g
         logger.info(
             f"brlogin: skipping callback for {broker} (user already logged in, "
