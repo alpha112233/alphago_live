@@ -21,6 +21,7 @@ const allBrokers = [
   { id: 'fivepaisaxts', name: '5 Paisa (XTS)', authType: 'totp' },
   { id: 'aliceblue', name: 'Alice Blue', authType: 'totp' },
   { id: 'angel', name: 'Angel One', authType: 'totp' },
+  { id: 'arihant', name: 'Arihant Capital', authType: 'otp' },
   { id: 'compositedge', name: 'CompositEdge', authType: 'oauth' },
   { id: 'dhan', name: 'Dhan', authType: 'oauth' },
   { id: 'deltaexchange', name: 'Delta Exchange', authType: 'totp' },
@@ -29,6 +30,8 @@ const allBrokers = [
   { id: 'definedge', name: 'Definedge', authType: 'totp' },
   { id: 'firstock', name: 'Firstock', authType: 'totp' },
   { id: 'flattrade', name: 'Flattrade', authType: 'oauth' },
+  { id: 'hdfcsec', name: 'HDFC InvestRight', authType: 'totp' },
+  { id: 'icicidirect', name: 'ICICI Direct (Breeze)', authType: 'oauth' },
   { id: 'motilal', name: 'Motilal Oswal', authType: 'totp' },
   { id: 'fyers', name: 'Fyers', authType: 'oauth' },
   { id: 'groww', name: 'Groww', authType: 'totp' },
@@ -172,6 +175,8 @@ export default function BrokerSelect() {
       case 'fivepaisaxts':
       case 'aliceblue':
       case 'angel':
+      case 'arihant':
+      case 'hdfcsec':
       case 'mstock':
       case 'indmoney':
       case 'deltaexchange':
@@ -193,6 +198,10 @@ export default function BrokerSelect() {
       case 'zebu':
         // Brokers using callback route (form-based or redirect-based)
         loginUrl = `/${selectedBroker}/callback`
+        break
+
+      case 'icicidirect':
+        loginUrl = `https://api.icicidirect.com/apiuser/login?api_key=${encodeURIComponent(broker_api_key)}`
         break
 
       case 'iiflcapital':
