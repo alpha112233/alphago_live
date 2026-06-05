@@ -171,12 +171,12 @@ BROKER_FIELDS: dict[str, list[dict]] = {
     # Plugin design-parity-ready but NOT enabled in hostingsol allowlist
     # until Arihant publishes AAAA (no AAAA as of 2026-05-20).
     "arihant": [
-        {"name": "api_key", "label": "Arihant App ID (api-key)",
+        {"name": "api_key", "label": "Arihant API Key",
          "type": "text", "required": True,
-         "help": "Issued by Arihant's TradeBridge developer portal."},
+         "help": "From your TradeBridge developer portal → My Apps, copy the value in the 'API Key' column (a short string like 'cqfS9tStGb1YClULn8'). Do NOT copy the 'App Id' column (the UUID) — only the API Key is used by the broker plugin."},
         {"name": "api_secret", "label": "Refresh token (auto-set by Connect button — leave blank)",
          "type": "password", "required": False,
-         "help": "DON'T enter manually. After you save the App ID and click 'Connect Arihant Capital', a two-step OTP page opens; once you complete it, this field is auto-populated with your user ID + refresh token. The daily 08:00 IST auto-login uses it to mint a fresh access token."},
+         "help": "DON'T enter manually. After you save the API Key and click 'Connect Arihant Capital', a two-step OTP page opens; once you complete it, this field is auto-populated with your user ID + refresh token. The daily 08:00 IST auto-login uses it to mint a fresh access token."},
     ],
     # ICICI Direct Breeze API — full port (feat/icici-direct-full-port).
     # Customer pastes app_key + secret_key once; daily session_token is
@@ -580,8 +580,10 @@ addresses are equally valid and you don't pick one over the other.
    - **App Name:** anything (e.g. `MyAlgo`).
    - **Callback URL:** (no redirect URL — Arihant uses an in-app OTP flow
      instead of OAuth; this field can be blank or `https://localhost`).
-3. After app creation the portal shows an **App ID** (called `api-key` in
-   the API). Copy it.
+3. After app creation the portal's "My Apps" page shows TWO columns —
+   **App Id** (a UUID like `27c69533-d62a-43b6-...`) and **API Key**
+   (a short string like `cqfS9tStGb1YClULn8`). Copy the **API Key** value
+   only — that's the one the broker plugin uses. Ignore the App Id.
 4. **Whitelist your dedicated IPv4** (mandatory — orders fail until this
    is done): In the same developer portal, open your app → **API Settings
    → Allowed IPs** (the exact menu varies; if you can't find it, contact
@@ -589,8 +591,9 @@ addresses are equally valid and you don't pick one over the other.
    of this page under "Dedicated IPv4 — Primary"). Paste only that IPv4
    address — no CIDR notation, no port. Save.
 5. Paste into the form here:
-   - **Arihant App ID:** the App ID from step 3.
-   - **api_secret** field: leave empty — it will be auto-populated below.
+   - **Arihant API Key:** the API Key string from step 3 (NOT the App Id).
+   - **Refresh token** field: leave empty — it's auto-populated after the
+     OTP step below.
 6. Save (don't activate yet) → click **Connect Arihant Capital**.
 7. You'll be redirected to a two-step OTP page hosted by AlphaQuark:
    - **Step 1:** enter your Arihant **User ID** + **Trading Password**.
