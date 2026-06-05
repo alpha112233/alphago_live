@@ -93,14 +93,29 @@ def transform_data(data: dict, token: str | int | None) -> dict:
     (numeric). Lot size: 1 for equity by default; FNO trades should
     pass lot_size via data['lot_size'] (frontend smart-form does this).
     """
+    # Arihant scrip-master uses suffixed tradingsymbol ("YESBANK-EQ", not
+    # "YESBANK"). OpenAlgo's canonical symbol is bare. If the symbol came
+    # in bare AND exchange is NSE/BSE equity, append "-EQ". FNO / commodity
+    # symbols already carry their own suffix (e.g. NIFTY24DEC25000CE) so
+    # leave anything that already contains '-' or doesn't start with letters
+    # untouched.
+    sym = data.get("symbol") or ""
+    exc_in = (data.get("exchange") or "NSE").upper()
+    if exc_in in ("NSE", "BSE") and "-" not in sym and sym:
+        sym = f"{sym}-EQ"
     return {
-        "symbol": data.get("symbol"),
-        "exc": (data.get("exchange") or "NSE").upper(),
+        "symbol": sym,
+        "exc": exc_in,
         "excToken": str(token) if token is not None else "",
         "instrument": _instrument_for_exchange(data.get("exchange")),
         "lotSize": int(data.get("lot_size") or 1),
         "ordAction": map_transaction_type(data.get("action")),
-        "ordType": map_order_type(data.get("ordertype") or data.get("order_type")),
+        # OpenAlgo's canonical schema names this 'pricetype' — accept all
+        # three to avoid silent downgrade to 'Limit' (which Arihant rejects
+        # with 'Invalid request' when limitPrice is 0).
+        "ordType": map_order_type(
+            data.get("pricetype") or data.get("ordertype") or data.get("order_type")
+        ),
         "ordValidity": map_duration(data.get("duration")),
         "prdType": map_product_type(data.get("product")),
         "qty": int(float(data.get("quantity") or 0)),
@@ -117,7 +132,12 @@ def transform_modify_order_data(data: dict) -> dict:
     change in a modify). ``ordId`` is stamped by the caller."""
     return {
         "ordAction": map_transaction_type(data.get("action")),
-        "ordType": map_order_type(data.get("ordertype") or data.get("order_type")),
+        # OpenAlgo's canonical schema names this 'pricetype' — accept all
+        # three to avoid silent downgrade to 'Limit' (which Arihant rejects
+        # with 'Invalid request' when limitPrice is 0).
+        "ordType": map_order_type(
+            data.get("pricetype") or data.get("ordertype") or data.get("order_type")
+        ),
         "ordValidity": map_duration(data.get("duration")),
         "prdType": map_product_type(data.get("product")),
         "qty": int(float(data.get("quantity") or 0)),
