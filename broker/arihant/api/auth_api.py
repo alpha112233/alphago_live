@@ -34,11 +34,21 @@ log = logging.getLogger(__name__)
 
 
 def _headers(api_key: str, access_token: str | None = None) -> dict:
+    # The `source` header value is per-API-key and Arihant rejects any
+    # value other than what's registered at app-creation time with
+    # EG006 'Invalid source'. ccxt-india's default has been WEB for
+    # years and works for the production aq_backend integrations, but
+    # newer API keys (TradeBridge L2 TRADING_API type, post-2026) need
+    # a different value that Arihant tells the customer at app-creation.
+    # ARIHANT_SOURCE env override lets the per-customer container set
+    # the right value without a code change. Probe with curl if unsure
+    # — EG006 means the value is wrong; anything else (E_USR001 etc.)
+    # means source is accepted and we're getting past that gate.
     h = {
         "Content-Type": "application/json",
         "Accept": "application/json",
         "api-key": api_key,
-        "source": "WEB",
+        "source": os.getenv("ARIHANT_SOURCE", "WEB").strip() or "WEB",
     }
     if access_token:
         h["Authorization"] = f"Bearer {access_token}"
