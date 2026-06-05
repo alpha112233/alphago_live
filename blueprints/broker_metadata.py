@@ -582,8 +582,9 @@ Click **Save**.
 
 **4. Connect (one-time OTP)**
 Click **Connect Arihant Capital**. A two-step page opens:
-- Enter your Arihant **User ID + Trading Password**. Arihant sends an
-  OTP to your registered mobile/email.
+- Enter your **User ID** (your Arihant Client Code, registered email, or
+  registered mobile number — any of the three works) and **Trading
+  Password**. Arihant sends an OTP to your registered mobile/email.
 - Enter the OTP. We complete the login and store your refresh token.
 
 You're connected. From the next day onward the 08:00 IST auto-login
