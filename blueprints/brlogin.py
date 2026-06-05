@@ -437,8 +437,24 @@ def broker_callback(broker, para=None):
                 data = (resp or {}).get("data") or {}
                 txn_id = data.get("txnId")
                 if not txn_id:
+                    info_id = (resp or {}).get("infoID") or ""
                     msg = (resp or {}).get("infoMsg") or "Login failed"
                     logger.error(f"Arihant login failed: {resp!r}")
+                    # EG006 'Invalid source' means the `source` header value
+                    # doesn't match what Arihant has registered for your API
+                    # key. Not something the customer can fix in the form —
+                    # they need to ask Arihant support for the correct source
+                    # value, then we set ARIHANT_SOURCE env in this container.
+                    if info_id == "EG006":
+                        msg = (
+                            "Your API key is registered with a specific 'source' "
+                            "value that we don't know yet. Email Arihant TradeBridge "
+                            "support: 'For API key " + (api_key[:6] + "..." if len(api_key) > 6 else "") +
+                            ", what is the valid value for the `source` HTTP header on "
+                            "/auth/v1/login? We are currently sending 'WEB' and "
+                            "receiving EG006 Invalid source.' Once they reply, share "
+                            "the value with AlphaQuark support to set ARIHANT_SOURCE."
+                        )
                     return _arihant_page("Step 1 of 2",
                         f'<h2>Connect Arihant Capital — Step 1 of 2</h2>'
                         f'<div class="err">{msg}</div>'
