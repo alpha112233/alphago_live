@@ -17,6 +17,7 @@ import {
   type LucideIcon,
   MessageSquare,
   Search,
+  Server,
   Settings,
   TrendingUp,
   User,
@@ -40,6 +41,7 @@ export const navItems: NavItem[] = [
   { href: '/action-center', label: 'Action Center', icon: Bell },
   { href: '/strategy', label: 'Strategy', icon: Code2 },
   { href: '/logs', label: 'Logs', icon: FileBarChart },
+  { href: '/instance', label: 'Your Instance', icon: Server },
 ]
 
 // Items shown in mobile bottom navigation
