@@ -54,11 +54,10 @@ logger = logging.getLogger(__name__)
 # routed via Decodo. Keep in sync with hostingsol/docs/IPV4_EGRESS_GAPS.md.
 # Lowercase for case-insensitive matching.
 DEFAULT_V4_HOSTS = {
-    "tradebridge.arihantplus.com",       # Arihant TradeBridge
-    "developer.hdfcsec.com",             # HDFC InvestRight
-    "api.icicidirect.com",               # ICICI Direct Breeze
+    "tradebridge.arihantplus.com",       # Arihant TradeBridge — no AAAA (2026-06-07)
+    "developer.hdfcsec.com",             # HDFC InvestRight   — no AAAA (2026-06-07)
+    "openapi.motilaloswal.com",          # Motilal Oswal      — no AAAA (2026-06-07)
     "api.mstock.trade",                  # m.stock
-    "openapi.motilaloswal.com",          # Motilal Oswal
     "ttblaze.compositedge.com",          # Compositedge
     "api.shoonya.com",                   # Shoonya / Finvasia
     "openapi.firstock.in",               # Firstock
@@ -67,6 +66,8 @@ DEFAULT_V4_HOSTS = {
     "wcapital.in",                       # Wisdom
     "go.mynt.in",                        # Zebu
     "api.stocknote.com",                 # Samco
+    # NOT v4-only (have AAAA; egress goes via customer's /128):
+    #   api.icicidirect.com — AAAA 2001:df3:140:1::b (verified 2026-06-07)
 }
 
 
@@ -81,9 +82,12 @@ DEFAULT_V4_HOSTS = {
 # customer's traffic falls through to the v6 default which the broker
 # will reject. Keep both lists synced.
 V4_ONLY_BROKERS = {
-    "arihant",       # tradebridge.arihantplus.com
-    "icicidirect",   # api.icicidirect.com (Breeze)
-    "hdfcsec",       # developer.hdfcsec.com (InvestRight)
+    "arihant",       # tradebridge.arihantplus.com — no AAAA (2026-06-07)
+    "hdfcsec",       # developer.hdfcsec.com — no AAAA (2026-06-07)
+    "motilal",       # openapi.motilaloswal.com — no AAAA (2026-06-07)
+    # Removed: 'icicidirect' — api.icicidirect.com publishes
+    # AAAA 2001:df3:140:1::b (verified 2026-06-07). Goes via the
+    # customer's dedicated /128 like every other v6-compat broker.
 }
 
 

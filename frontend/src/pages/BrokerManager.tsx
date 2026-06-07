@@ -287,8 +287,9 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
                     broker's developer console — surface them prominently
                     rather than leave the customer to scroll through the
                     markdown looking for them. v4-only brokers (Arihant,
-                    ICICI Direct, HDFC InvestRight) get the IPv4 here;
-                    everything else gets the dedicated IPv6. */}
+                    HDFC InvestRight, Motilal Oswal) get the IPv4 here;
+                    everything else (including ICICI Direct — has AAAA)
+                    gets the dedicated IPv6. */}
                 <div className="space-y-2 pt-1 border-t">
                   {instructions.v4_required ? (
                     instructions.client_ipv4_primary ? (
@@ -633,10 +634,10 @@ export default function BrokerManager() {
               <CopyableCode value={hostInfo.client_ipv6} label="IPv6:" />
               <p className="text-xs text-muted-foreground pt-1">
                 Use for: Dhan, Upstox, Fyers, AngelOne, Groww, Kotak, IIFL,
-                Definedge, FivePaisa, Paytm Money, Zerodha, Flattrade, IndMoney.
-                Unique to your instance — no scarcity, no shared-IP risk.
+                ICICI Direct, Definedge, FivePaisa, Paytm Money, Zerodha, Flattrade,
+                IndMoney. Unique to your instance — no scarcity, no shared-IP risk.
                 <br />
-                <strong>Do NOT use IPv6 for Arihant, ICICI Direct, or HDFC InvestRight</strong> —
+                <strong>Do NOT use IPv6 for Arihant, HDFC InvestRight, or Motilal Oswal</strong> —
                 their API endpoints are IPv4-only and will reject v6 traffic.
                 Whitelist the IPv4 address below instead.
               </p>

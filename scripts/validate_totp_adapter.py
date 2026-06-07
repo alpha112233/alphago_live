@@ -35,8 +35,10 @@ file lands at /tmp/totp-capture-<broker>-<timestamp>.json.
 Pre-requisites:
     - Real active account at the broker
     - 2FA type confirmed (TOTP / SMS-OTP / PIN — different fields needed)
-    - Decodo v4 egress already set up for v4-only brokers (icicidirect,
-      hdfcsec) — verify with --probe first
+    - For v4-only brokers (hdfcsec): Decodo v4 egress wired — verify
+      with --probe first. ICICI Direct egresses via the customer's
+      dedicated /128 (api.icicidirect.com has AAAA records), so no v4
+      egress prerequisite for that broker.
 """
 
 from __future__ import annotations
