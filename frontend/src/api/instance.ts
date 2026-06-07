@@ -1,4 +1,4 @@
-import webClient from './webClient'
+import { webClient } from './client'
 
 export interface NetworkIdentity {
   subdomain: string
