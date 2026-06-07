@@ -26,6 +26,36 @@ export async function getAuditLog(q: AuditQuery = {}): Promise<AuditRow[]> {
   return r.data.data as AuditRow[]
 }
 
+export interface AuditVerifyResult {
+  ok: boolean
+  total_rows: number
+  verified_rows: number
+  first_break_at_id: number | null
+  first_break_reason: string | null
+  head_hash: string | null
+  head_id: number | null
+  count: number
+  legacy_unhashed_rows: number
+}
+
+export async function verifyAuditChain(): Promise<AuditVerifyResult> {
+  const r = await webClient.get('/api/instance/audit/verify')
+  if (r.data?.status !== 'success') throw new Error(r.data?.message || 'verify failed')
+  return r.data.data as AuditVerifyResult
+}
+
+export interface AuditHead {
+  head_hash: string | null
+  head_id: number | null
+  count: number
+}
+
+export async function getAuditHead(): Promise<AuditHead> {
+  const r = await webClient.get('/api/instance/audit/head')
+  if (r.data?.status !== 'success') throw new Error(r.data?.message || 'head failed')
+  return r.data.data as AuditHead
+}
+
 export function getAuditExportUrl(q: AuditQuery = {}): string {
   const sp = new URLSearchParams()
   if (q.limit) sp.set('limit', String(q.limit))
