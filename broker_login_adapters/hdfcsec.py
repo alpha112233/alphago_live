@@ -1,16 +1,19 @@
 # broker_login_adapters/hdfcsec.py
 """Daemon auto-login for HDFC Securities (InvestRight) — UNVERIFIED SKELETON.
 
-⚠️⚠️ NOT validated against a real HDFC InvestRight account. NOT in the
-live ADAPTERS registry (see _UNVERIFIED_ADAPTERS). Doubly blocked:
+⚠️ NOT validated against a real HDFC InvestRight account. NOT in the
+live ADAPTERS registry (see _UNVERIFIED_ADAPTERS). One blocker:
 
-  1. UNVERIFIED — the InvestRight web-login form mechanics are
-     uncaptured (same situation as icicidirect.py).
-  2. INFRA-BLOCKED — developer.hdfcsec.com is IPv4-only (AWS ALB, no
-     AAAA). hostingsol customers can't reach it at all until the
-     per-customer IPv4 egress project lands (hostingsol/docs/IPV4_EGRESS_GAPS.md).
-     So even a correct adapter is useless on hostingsol today; only
-     dual-stack operators could use it.
+  UNVERIFIED — the InvestRight web-login form mechanics are uncaptured
+  (same shape as icicidirect.py). Promotion to ADAPTERS requires one
+  end-to-end capture against a real account, replacing the ASSUMED_*
+  constants with values from Chrome DevTools.
+
+  ✅ (Resolved 2026-06-05) IPv4 reachability previously blocked
+  hostingsol customers from hitting developer.hdfcsec.com (AWS ALB,
+  v4-only). The Phase 7 Decodo egress mounts v4-only broker hosts
+  through dedicated per-customer Decodo IPs. So this adapter, once
+  calibrated, will work on hostingsol containers — no longer dual-stack-only.
 
 Background:
     HDFC InvestRight uses an OAuth2 redirect: the customer hits
@@ -29,9 +32,7 @@ Contract: login(creds) -> {ok, access_token, ...}. On success
 exchanges) OR the final accessToken — to be decided at validation time
 based on what the captured flow actually yields.
 
-Validation checklist: same shape as icicidirect.py. Additionally,
-confirm IPv4 reachability is solved (or run only on a dual-stack box)
-before promoting to ADAPTERS.
+Validation runbook: see docs/TOTP_ADAPTER_VALIDATION.md.
 """
 from __future__ import annotations
 
