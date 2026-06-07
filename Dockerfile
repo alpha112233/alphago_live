@@ -47,6 +47,12 @@ COPY --from=python-builder --chown=appuser:appuser /app/.venv /app/.venv
 COPY --chown=appuser:appuser . .
 # 3 - copy built frontend from frontend-builder
 COPY --from=frontend-builder --chown=appuser:appuser /app/frontend/dist /app/frontend/dist
+# 3b – bake the git SHA into /app/.version so the 'Your Instance' page can
+#      show the running image version even when OPENALGO_VERSION isn't in
+#      the container's env (compose .env is used for var substitution at
+#      compose-config time only, NOT passed to the container by default).
+ARG IMAGE_SHA=""
+RUN echo "$IMAGE_SHA" > /app/.version && chown appuser:appuser /app/.version
 # 4 – create required directories with proper ownership and permissions
 #     Also create empty .env file with write permissions for Railway deployment
 RUN mkdir -p /app/log /app/log/strategies /app/db /app/tmp /app/tmp/numba_cache /app/tmp/matplotlib /app/strategies /app/strategies/scripts /app/strategies/examples /app/keys && \

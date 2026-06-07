@@ -164,28 +164,49 @@ def _active_broker_info() -> dict:
 
 
 def _runtime_info() -> dict:
-    """Container uptime, image SHA, version of running code."""
+    """Container uptime, image SHA, version of running code.
+
+    Uptime is measured from gunicorn (PID 1 inside the container)'s start
+    time — NOT the kernel boot time. With network_mode: host the container
+    shares the host's net namespace, so psutil.boot_time() reports host
+    boot which is misleading.
+    """
     info = {
         "uptime_seconds": 0,
         "boot_time_utc": None,
-        "image_sha": os.getenv("OPENALGO_VERSION") or "",
+        "image_sha": _read_image_sha(),
         "hostname": os.uname().nodename if hasattr(os, "uname") else "",
     }
+    # Container/process uptime: PID 1 starttime from /proc/1/stat (field 22,
+    # in clock ticks since system boot). Add to system boot time.
     try:
         import psutil
         boot = psutil.boot_time()
-        info["boot_time_utc"] = datetime.fromtimestamp(boot, tz=timezone.utc).isoformat()
-        info["uptime_seconds"] = int(datetime.now(timezone.utc).timestamp() - boot)
-    except Exception:
-        pass
+        clk_tck = os.sysconf("SC_CLK_TCK") or 100
+        with open("/proc/1/stat") as f:
+            stat_line = f.read()
+        # PID 1's comm may contain spaces — split safely from the right of ')'
+        rparen = stat_line.rfind(")")
+        rest = stat_line[rparen + 1:].split()
+        start_ticks = int(rest[19])  # field 22 in proc(5), index 19 after stripping pid+comm
+        container_start_ts = boot + (start_ticks / clk_tck)
+        info["boot_time_utc"] = datetime.fromtimestamp(container_start_ts, tz=timezone.utc).isoformat()
+        info["uptime_seconds"] = max(0, int(datetime.now(timezone.utc).timestamp() - container_start_ts))
+    except Exception as e:
+        logger.warning(f"container uptime calc failed: {e}")
+        # Fallback to psutil.boot_time (will be host-boot under network_mode: host)
+        try:
+            import psutil
+            boot = psutil.boot_time()
+            info["boot_time_utc"] = datetime.fromtimestamp(boot, tz=timezone.utc).isoformat()
+            info["uptime_seconds"] = int(datetime.now(timezone.utc).timestamp() - boot)
+        except Exception:
+            pass
 
     # Container ID from /proc/self/cgroup (works in both v1 and v2 layouts).
     try:
         with open("/proc/self/cgroup") as f:
             for line in f:
-                # cgroupv1: 'X:name:/docker/<container_id>'
-                # cgroupv2: '0::/docker/<container_id>' or
-                # '0::/system.slice/docker-<id>.scope'
                 if "docker" in line:
                     parts = line.strip().split("/")
                     cid = parts[-1].replace("docker-", "").replace(".scope", "")
@@ -195,6 +216,28 @@ def _runtime_info() -> dict:
     except Exception:
         pass
     return info
+
+
+def _read_image_sha() -> str:
+    """Image SHA / version string. Reads multiple sources in order:
+      1) OPENALGO_VERSION env (set if compose passes it via environment:)
+      2) /app/.version file (baked at image build time — preferred)
+      3) /etc/openalgo-version (alternative bake location)
+    Returns empty string if none present."""
+    v = (os.getenv("OPENALGO_VERSION") or "").strip()
+    if v:
+        return v
+    for path in ("/app/.version", "/etc/openalgo-version"):
+        try:
+            with open(path) as f:
+                v = f.read().strip()
+            if v:
+                return v
+        except FileNotFoundError:
+            continue
+        except Exception:
+            continue
+    return ""
 
 
 def _data_sovereignty_info() -> dict:
