@@ -194,6 +194,7 @@ def poll_once() -> dict:
                 sig.last_polled_at = datetime.utcnow()
                 continue
 
+            old_status = sig.fill_status
             sig.fill_status = new_status
             if filled_qty is not None:
                 sig.filled_quantity = filled_qty
@@ -201,6 +202,24 @@ def poll_once() -> dict:
                 sig.average_price = avg_px
             sig.last_polled_at = datetime.utcnow()
             updated_count += 1
+
+            # Audit: fill-status transition is a money-event — record it.
+            try:
+                from utils.audit import audit_log
+                audit_log(
+                    actor="broker", action="order.fill_status",
+                    resource=str(sig.broker_order_id or sig.id),
+                    before={"fill_status": old_status},
+                    after={
+                        "fill_status": new_status,
+                        "filled_quantity": filled_qty,
+                        "average_price": avg_px,
+                    },
+                    status="ok",
+                    note=f"signal_id={sig.signal_id}",
+                )
+            except Exception:
+                pass
 
             # Best-effort push to publisher. Failure → we still log
             # locally; next cycle will re-attempt because the fact that

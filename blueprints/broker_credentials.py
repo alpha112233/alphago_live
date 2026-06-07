@@ -686,6 +686,23 @@ def request_v4_ip_endpoint():
             }), 503
         r.raise_for_status()
         result = r.json()
+        try:
+            from utils.audit import audit_log
+            src = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+            audit_log(
+                actor="admin", action="instance.allocate_v4_ip",
+                resource=result.get("ip"),
+                after={
+                    "ip": result.get("ip"),
+                    "port": result.get("port"),
+                    "broker_requested": broker,
+                    "container_restart_triggered": True,
+                },
+                src_ip=src, status="ok",
+                note=f"hostingsol allocate-v4 allocated {result.get('ip')} for {broker}; container restarting",
+            )
+        except Exception:
+            pass
         return jsonify({
             "status": "success",
             "ip": result.get("ip"),

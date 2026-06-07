@@ -523,6 +523,18 @@ def broker_callback(broker, para=None):
                         )
                         os.environ["BROKER_API_SECRET"] = f"{arihant_user}:::{refresh_token}"
                         logger.info(f"Arihant: refresh_token persisted for user_id={arihant_user}")
+                        try:
+                            from utils.audit import audit_log
+                            src = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
+                            audit_log(
+                                actor="customer", action="broker.otp_complete",
+                                resource="arihant",
+                                after={"user_id": arihant_user, "refresh_token_persisted": True},
+                                src_ip=src, status="ok",
+                                note="Arihant OTP login completed; refresh token stored",
+                            )
+                        except Exception:
+                            pass
                     else:
                         logger.warning("Arihant: no admin user yet — refresh_token NOT persisted")
                 except Exception as e:
