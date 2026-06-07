@@ -208,10 +208,35 @@ def init_auto_login_scheduler() -> None:
         name="Daily pre-market broker auto-login",
         replace_existing=True,
     )
+
+    # Daily audit-log prune (Tier 1 / #88). Run at 03:00 IST so it's well
+    # outside trading hours. Retention is set via AUDIT_LOG_RETENTION_DAYS
+    # env (default 365); 0 = never prune.
+    _scheduler.add_job(
+        _run_audit_prune,
+        trigger=CronTrigger(hour=3, minute=0, timezone=_IST),
+        id="audit_log_prune_daily",
+        name="Daily audit-log retention prune",
+        replace_existing=True,
+    )
+
     _scheduler.start()
     logger.info(
-        f"auto-login scheduler started (dow={dow} time={hour:02d}:{minute:02d} IST)"
+        f"auto-login scheduler started (dow={dow} time={hour:02d}:{minute:02d} IST) "
+        f"+ audit-log prune at 03:00 IST"
     )
+
+
+def _run_audit_prune() -> None:
+    """Wrapper for the daily audit-log prune job. Catches everything so a
+    failing prune never wedges the scheduler."""
+    try:
+        from utils.audit import prune
+        deleted = prune()
+        if deleted:
+            logger.info(f"audit prune: deleted {deleted} rows older than retention")
+    except Exception as e:
+        logger.warning(f"audit prune failed (non-fatal): {e}")
 
 
 def get_scheduler_status() -> dict:
