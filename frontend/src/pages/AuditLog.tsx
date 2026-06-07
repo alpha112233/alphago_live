@@ -4,10 +4,10 @@
  * filterable table + CSV export button.
  */
 
-import { Download, FileBarChart, Filter, Loader2, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, FileBarChart, Filter, Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-import { type AuditRow, getAuditExportUrl, getAuditLog } from '@/api/audit'
+import { type AuditRow, type AuditVerifyResult, getAuditExportUrl, getAuditLog, verifyAuditChain } from '@/api/audit'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -60,6 +60,30 @@ export default function AuditLog() {
   const [error, setError] = useState<string | null>(null)
   const [actor, setActor] = useState<string>('all')
   const [actionPrefix, setActionPrefix] = useState<string>('all')
+  const [verifying, setVerifying] = useState(false)
+  const [verify, setVerify] = useState<AuditVerifyResult | null>(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
+
+  async function runVerify() {
+    setVerifying(true)
+    setVerifyError(null)
+    try {
+      setVerify(await verifyAuditChain())
+    } catch (e: any) {
+      setVerifyError(e?.message || 'verify failed')
+    } finally {
+      setVerifying(false)
+    }
+  }
+
+  async function copyHead() {
+    if (!verify?.head_hash) return
+    try {
+      await navigator.clipboard.writeText(verify.head_hash)
+    } catch {
+      // ignore
+    }
+  }
 
   async function refresh() {
     setLoading(true)
@@ -115,6 +139,63 @@ export default function AuditLog() {
           </a>
         </div>
       </div>
+
+      <Card className={`border-${verify?.ok === false ? 'destructive' : 'emerald-500/30'}`}>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4" />
+            Tamper-evident chain
+          </CardTitle>
+          <CardDescription>
+            Each row's hash chains to the previous row's hash. Tampering breaks the chain.
+            Save the head hash externally to detect any post-hoc edit.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={runVerify} disabled={verifying}>
+              {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <ShieldCheck className="h-3.5 w-3.5 mr-1.5" />}
+              Verify chain
+            </Button>
+            {verify?.head_hash && (
+              <Button variant="ghost" size="sm" onClick={copyHead}>
+                <Download className="h-3.5 w-3.5 mr-1.5" />
+                Copy head hash
+              </Button>
+            )}
+          </div>
+          {verifyError && <p className="text-sm text-destructive">{verifyError}</p>}
+          {verify && (
+            <div className="space-y-1.5 text-sm">
+              {verify.ok ? (
+                <div className="flex items-center gap-2 text-emerald-300">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <strong>Chain intact</strong> — verified {verify.verified_rows} of {verify.total_rows} rows.
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 text-destructive">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <div>
+                    <strong>Chain broken at row id {verify.first_break_at_id}.</strong>{' '}
+                    {verify.first_break_reason}
+                  </div>
+                </div>
+              )}
+              {verify.head_hash && (
+                <p className="text-xs text-muted-foreground break-all">
+                  Head (id {verify.head_id}): <code className="font-mono">{verify.head_hash}</code>
+                </p>
+              )}
+              {verify.legacy_unhashed_rows > 0 && (
+                <p className="text-xs text-amber-300">
+                  {verify.legacy_unhashed_rows} pre-chain row{verify.legacy_unhashed_rows === 1 ? '' : 's'} from
+                  before this feature shipped — unverifiable, kept for completeness.
+                </p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">

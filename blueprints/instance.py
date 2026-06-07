@@ -275,6 +275,40 @@ def _data_sovereignty_info() -> dict:
 # Audit log endpoints (#88)
 # ---------------------------------------------------------------------------
 
+@instance_bp.route("/api/instance/audit/verify", methods=["GET"])
+def instance_audit_verify_endpoint():
+    """Walk the audit chain from genesis forward, recomputing each row's
+    hash. A break (row tampered with, or one deleted) is reported with
+    the row id where the chain first diverges + a short reason.
+
+    Customer-session-authed. Idempotent + read-only."""
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+    try:
+        from utils.audit import verify_chain, head_hash
+        result = verify_chain()
+        result.update(head_hash())
+        return jsonify({"status": "success", "data": result})
+    except Exception as e:
+        logger.exception("audit verify failed")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@instance_bp.route("/api/instance/audit/head", methods=["GET"])
+def instance_audit_head_endpoint():
+    """Most recent row's hash + id + total row count. Customer saves
+    this externally; if a future verify shows the same head_hash, no row
+    in between has been tampered with."""
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+    try:
+        from utils.audit import head_hash
+        return jsonify({"status": "success", "data": head_hash()})
+    except Exception as e:
+        logger.exception("audit head failed")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @instance_bp.route("/api/instance/audit", methods=["GET"])
 def instance_audit_endpoint():
     """List recent audit rows for this container. Customer-session-authed.
