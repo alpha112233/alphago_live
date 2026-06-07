@@ -41,6 +41,7 @@ from blueprints.broker_credentials import (
     broker_credentials_bp,  # Import the broker credentials blueprint
 )
 from blueprints.distribution import distribution_bp  # alphago_live fork — webhook fan-out inbox
+from blueprints.instance import instance_bp  # alphago_live: customer 'Your Infrastructure' info
 from blueprints.chartink import chartink_bp  # Import the chartink blueprint
 from blueprints.strategy_portfolio import strategy_portfolio_bp  # Strategy Builder portfolio
 from blueprints.core import core_bp
@@ -251,6 +252,7 @@ def create_app():
     app.register_blueprint(platforms_bp)
     app.register_blueprint(brlogin_bp)
     app.register_blueprint(distribution_bp)  # alphago_live fork
+    app.register_blueprint(instance_bp)  # alphago_live: /api/instance/info
     app.register_blueprint(core_bp)
     app.register_blueprint(analyzer_bp)
     app.register_blueprint(settings_bp)
