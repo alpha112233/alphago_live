@@ -245,6 +245,12 @@ def login():
         if authenticate_user(username, password):
             session["user"] = username  # Set the username in the session
             logger.info(f"[LOGIN] Password auth success for: {username}")
+            try:
+                from utils.audit import audit_log
+                audit_log(actor="customer", action="session.login", resource=username,
+                          src_ip=ip, status="ok", note=ua[:200])
+            except Exception:
+                pass
 
             # Try to resume existing broker session (skip OAuth if token still valid)
             resumed = _try_resume_broker_session(username)

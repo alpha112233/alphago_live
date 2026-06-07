@@ -219,6 +219,30 @@ def place_order_with_auth(
     if res.status == 200:
         order_response_data = {"status": "success", "orderid": order_id}
 
+        # Audit: order placement attempt that the broker accepted.
+        try:
+            from utils.audit import audit_log
+            audit_log(
+                actor="customer", action="order.place",
+                resource=str(order_id) if order_id else None,
+                before=None,
+                after={
+                    "symbol": order_data.get("symbol"),
+                    "exchange": order_data.get("exchange"),
+                    "action": order_data.get("action"),
+                    "quantity": order_data.get("quantity"),
+                    "pricetype": order_data.get("pricetype"),
+                    "product": order_data.get("product"),
+                    "price": order_data.get("price"),
+                    "broker": broker,
+                    "orderid": order_id,
+                },
+                status="ok",
+                note=order_data.get("strategy") or None,
+            )
+        except Exception:
+            pass
+
         if emit_event:
             bus.publish(OrderPlacedEvent(
                 mode="live",
@@ -244,6 +268,27 @@ def place_order_with_auth(
             else "Failed to place order"
         )
         error_response = {"status": "error", "message": message}
+        # Audit: order placement attempt that the broker rejected.
+        try:
+            from utils.audit import audit_log
+            audit_log(
+                actor="customer", action="order.place",
+                resource=None,
+                before=None,
+                after={
+                    "symbol": order_data.get("symbol"),
+                    "exchange": order_data.get("exchange"),
+                    "action": order_data.get("action"),
+                    "quantity": order_data.get("quantity"),
+                    "pricetype": order_data.get("pricetype"),
+                    "product": order_data.get("product"),
+                    "broker": broker,
+                },
+                status="rejected",
+                note=message[:480],
+            )
+        except Exception:
+            pass
         bus.publish(OrderFailedEvent(
             mode="live",
             api_type="placeorder",

@@ -38,6 +38,7 @@ const Profile = lazy(() => import('@/pages/Profile'))
 const BrokerManager = lazy(() => import('@/pages/BrokerManager'))  // alphago_live fork
 const DistributionInbox = lazy(() => import('@/pages/DistributionInbox'))  // alphago_live fork
 const Infrastructure = lazy(() => import('@/pages/Infrastructure'))  // alphago_live fork — Your Instance page
+const AuditLog = lazy(() => import('@/pages/AuditLog'))  // alphago_live fork — compliance trail
 const MasterContract = lazy(() => import('@/pages/MasterContract'))
 const ActionCenter = lazy(() => import('@/pages/ActionCenter'))
 
@@ -177,6 +178,7 @@ function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/positions" element={<Positions />} />
                 <Route path="/instance" element={<Infrastructure />} />
+                <Route path="/audit-log" element={<AuditLog />} />
                 <Route path="/orderbook" element={<OrderBook />} />
                 <Route path="/tradebook" element={<TradeBook />} />
                 <Route path="/holdings" element={<HoldingsRoute />} />
