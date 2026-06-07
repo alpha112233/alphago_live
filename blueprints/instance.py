@@ -10,14 +10,19 @@ sharing a service.
 All info is read live from the customer's own container (env + psutil +
 broker_creds_db). Nothing reaches outside their own runtime, so any
 operator action shows up here without trust assumptions.
+
+Also exposes the per-container audit log (#88) at /api/instance/audit
++ a CSV export at /api/instance/audit/export.
 """
 from __future__ import annotations
 
+import csv
+import io
 import logging
 import os
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, session
+from flask import Blueprint, Response, jsonify, request, session
 
 logger = logging.getLogger(__name__)
 
@@ -264,3 +269,83 @@ def _data_sovereignty_info() -> dict:
             "/app/db/distribution.db (received signals + dispatch history)",
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Audit log endpoints (#88)
+# ---------------------------------------------------------------------------
+
+@instance_bp.route("/api/instance/audit", methods=["GET"])
+def instance_audit_endpoint():
+    """List recent audit rows for this container. Customer-session-authed.
+
+    Query params:
+      limit=200 (max 5000)
+      actor=customer|admin|system|broker
+      action_prefix=order. | broker. | session.
+      since=ISO-8601
+    """
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+    try:
+        from utils.audit import query_recent
+        rows = query_recent(
+            limit=int(request.args.get("limit", "200")),
+            actor=request.args.get("actor") or None,
+            action_prefix=request.args.get("action_prefix") or None,
+            since_iso=request.args.get("since") or None,
+        )
+        return jsonify({"status": "success", "data": rows, "count": len(rows)})
+    except Exception as e:
+        logger.exception("audit query failed")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@instance_bp.route("/api/instance/audit/export", methods=["GET"])
+def instance_audit_export_endpoint():
+    """CSV export of the audit log for offline compliance / archival.
+    Same filter query params as /api/instance/audit."""
+    if not session.get("user"):
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+    try:
+        from utils.audit import query_recent
+        rows = query_recent(
+            limit=int(request.args.get("limit", "5000")),
+            actor=request.args.get("actor") or None,
+            action_prefix=request.args.get("action_prefix") or None,
+            since_iso=request.args.get("since") or None,
+        )
+        out = io.StringIO()
+        w = csv.writer(out)
+        w.writerow(["id", "ts", "actor", "action", "resource",
+                    "before", "after", "src_ip", "status", "note"])
+        for r in rows:
+            w.writerow([
+                r.get("id"), r.get("ts"), r.get("actor"), r.get("action"),
+                r.get("resource") or "",
+                _stringify(r.get("before")),
+                _stringify(r.get("after")),
+                r.get("src_ip") or "", r.get("status") or "", r.get("note") or "",
+            ])
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        filename = f"audit-{(os.getenv('HSOL_SUBDOMAIN') or 'instance')}-{ts}.csv"
+        return Response(
+            out.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        logger.exception("audit export failed")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+def _stringify(v) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, (dict, list)):
+        try:
+            import json
+            return json.dumps(v, default=str)[:2000]
+        except Exception:
+            return str(v)[:2000]
+    return str(v)[:2000]

@@ -614,11 +614,28 @@ def activate_credentials_endpoint(broker: str):
             ),
         }), 409
 
+    previous_broker = os.getenv("BROKER") or ""
+
     if not activate_broker(user_id, broker):
         return jsonify({"status": "error", "message": f"broker '{broker}' is not saved"}), 404
 
     creds = get_broker_creds(user_id, broker) or {}
     ok, err = _sync_active_broker_to_env(creds, broker)
+
+    # Audit: customer-initiated broker switch is high-signal for compliance.
+    try:
+        from utils.audit import audit_log
+        audit_log(
+            actor="customer", action="broker.activate", resource=broker,
+            before={"active_broker": previous_broker or None},
+            after={"active_broker": broker},
+            src_ip=(request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip(),
+            status="ok" if ok else "failed",
+            note=err or None,
+        )
+    except Exception:
+        pass
+
     if not ok:
         return jsonify({"status": "error", "message": f"activated but env sync failed: {err}"}), 500
 
