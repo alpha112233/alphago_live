@@ -391,6 +391,15 @@ def broker_callback(broker, para=None):
     input[type=text], input[type=password] {{ width: 100%; padding: 10px;
             border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box;
             font-size: 1rem; }}
+    .pw-wrap {{ position: relative; }}
+    .pw-wrap input {{ padding-right: 56px; }}
+    .pw-toggle {{ position: absolute; right: 8px; top: 50%;
+            transform: translateY(-50%); margin: 0; padding: 4px 10px;
+            background: none; color: #555; border: 1px solid #ddd;
+            border-radius: 4px; font-size: 0.75rem; font-weight: 600;
+            cursor: pointer; width: auto; min-width: 44px;
+            -webkit-user-select: none; user-select: none; }}
+    .pw-toggle:hover {{ background: #f3f3f3; color: #111; }}
     button {{ margin-top: 24px; width: 100%; padding: 12px; background: #111;
              color: #fff; border: 0; border-radius: 6px; font-size: 1rem;
              cursor: pointer; }}
@@ -398,6 +407,17 @@ def broker_callback(broker, para=None):
     .err {{ color: #b00; margin-top: 12px; padding: 8px; background: #fee;
             border-radius: 4px; font-size: 0.9rem; }}
   </style>
+  <script>
+    // Toggles the type of the password input pointed at by data-target.
+    // Inline so the form stays self-contained (no extra asset request).
+    function togglePw(btn) {{
+      var sel = btn.getAttribute('data-target');
+      var inp = document.querySelector(sel);
+      if (!inp) return;
+      if (inp.type === 'password') {{ inp.type = 'text'; btn.textContent = 'Hide'; }}
+      else {{ inp.type = 'password'; btn.textContent = 'Show'; }}
+    }}
+  </script>
 </head><body>{body_html}</body></html>"""
 
         if request.method == "GET":
@@ -411,7 +431,10 @@ def broker_callback(broker, para=None):
     <label>Arihant User ID</label>
     <input type="text" name="user_id" required autocomplete="username">
     <label>Trading Password</label>
-    <input type="password" name="password" required autocomplete="current-password">
+    <div class="pw-wrap">
+      <input id="ar-pw" type="password" name="password" required autocomplete="current-password">
+      <button type="button" class="pw-toggle" data-target="#ar-pw" onclick="togglePw(this)">Show</button>
+    </div>
     <button type="submit">Send OTP</button>
   </form>
 """)
