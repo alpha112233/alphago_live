@@ -759,6 +759,34 @@ def receive_signal_endpoint(inbox_slug: str):
         }), 502
 
     broker_order_id = (response_data or {}).get("orderid") or (response_data or {}).get("order_id")
+    if not broker_order_id:
+        # Broker accepted the call (place_order returned success=True) but the
+        # response dict didn't include orderid/order_id under either standard
+        # name — could be a broker plugin using a non-standard key, a partial
+        # acceptance, or a returned-but-orderless rejection. We can't track
+        # this order for modify/cancel/exit later, so claiming "status=success"
+        # would just create a downstream phantom (publisher would increment
+        # admin_positions but never be able to close cleanly). Refuse the
+        # claim explicitly so the publisher's delivery row gets marked failed
+        # — operator can verify on the broker portal directly.
+        err_msg = (
+            f"broker '{broker}' accepted the order but did not return an order_id "
+            f"in the response (checked keys: 'orderid', 'order_id'). The order "
+            f"may have placed at the broker — verify on broker portal — but the "
+            f"container cannot track it for later modify/cancel/exit, so reporting "
+            f"this as a placement failure."
+        )
+        record_signal(
+            inbox_id=inbox.id, signal_id=signal_id, src_ip=src_ip,
+            payload=body, status="failed", broker_used=broker, error_message=err_msg,
+        )
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "message": err_msg,
+            "response": response_data,
+        }), 502
+
     record_signal(
         inbox_id=inbox.id, signal_id=signal_id, src_ip=src_ip,
         payload=body, status="placed", broker_used=broker, broker_order_id=broker_order_id,
