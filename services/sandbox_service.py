@@ -9,7 +9,7 @@ sandbox trading environment instead of the live broker.
 
 from typing import Any, Dict, Optional, Tuple
 
-from database.auth_db import verify_api_key
+from database.auth_db import get_first_available_api_key, verify_api_key
 from database.settings_db import get_analyze_mode
 from sandbox.fund_manager import FundManager, get_user_funds
 from sandbox.holdings_manager import HoldingsManager
@@ -28,8 +28,26 @@ def is_sandbox_mode() -> bool:
 
 
 def get_user_id_from_apikey(api_key: str) -> str | None:
-    """Get user ID from API key"""
+    """Get user ID from API key.
+
+    Distribution-flow compatibility: `blueprints/distribution.py` calls into
+    `place_order_service` (and siblings) with the literal apikey
+    "distribution-internal". In LIVE mode that is harmless because the
+    downstream broker call authenticates via the broker auth_token and never
+    touches the local ApiKeys table. In ANALYZE mode, however, this path
+    validates the apikey against ApiKeys and rejects the magic value as
+    "Invalid API key" — which broke all publisher-driven paper trades.
+
+    The hostingsol container is single-tenant, so when we see the magic
+    value we substitute the only configured customer apikey. Falls through
+    to the original behaviour if no apikey is configured (caller will get
+    "Invalid API key" as before).
+    """
     try:
+        if api_key == "distribution-internal":
+            real = get_first_available_api_key()
+            if real:
+                api_key = real
         user_id = verify_api_key(api_key)
         return user_id
     except Exception as e:
