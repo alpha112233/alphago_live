@@ -1,12 +1,15 @@
 # database/user_db.py
 
+import hashlib
 import os
+import secrets
+from datetime import datetime, timedelta, timezone
 
 import pyotp
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cachetools import TTLCache
-from sqlalchemy import Boolean, Column, Integer, String, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -111,6 +114,90 @@ class User(Base):
         """Verify TOTP token"""
         totp = pyotp.TOTP(self.get_totp_secret())
         return totp.verify(token)
+
+
+class PasswordActivation(Base):
+    """One-time set-password tokens for newly provisioned accounts.
+
+    A separate table (NOT new columns on ``users``) because schema setup is
+    create_all()-based — create_all creates missing TABLES but never ALTERs
+    existing ones, so adding columns to ``users`` would silently no-op on
+    every already-provisioned instance. Only the SHA-256 of the token is
+    stored; the plaintext appears once in the provisioner output / email.
+    """
+
+    __tablename__ = "password_activations"
+    id = Column(Integer, primary_key=True)
+    username = Column(String(80), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+
+
+def _hash_activation_token(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_password_activation(username, ttl_hours=72):
+    """Mint a one-time set-password token for ``username``.
+
+    Invalidates any previous unused tokens for the same user (latest link
+    wins — matters when a provision is retried). Returns the plaintext
+    token, or None if the user doesn't exist.
+    """
+    user = User.query.filter_by(username=username).first()
+    if user is None:
+        return None
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    PasswordActivation.query.filter_by(username=username, used_at=None).delete()
+    token = secrets.token_urlsafe(32)
+    db_session.add(
+        PasswordActivation(
+            username=username,
+            token_hash=_hash_activation_token(token),
+            created_at=now,
+            expires_at=now + timedelta(hours=ttl_hours),
+        )
+    )
+    db_session.commit()
+    return token
+
+
+def validate_password_activation(token):
+    """Return the username for a live (unused, unexpired) token, else None."""
+    if not token:
+        return None
+    row = PasswordActivation.query.filter_by(
+        token_hash=_hash_activation_token(token), used_at=None
+    ).first()
+    if row is None:
+        return None
+    if datetime.now(timezone.utc).replace(tzinfo=None) > row.expires_at:
+        return None
+    return row.username
+
+
+def consume_password_activation(token, new_password):
+    """Set the user's password via a live activation token (single-use).
+
+    Returns (ok: bool, message: str). The caller is responsible for
+    password-strength validation BEFORE calling this.
+    """
+    username = validate_password_activation(token)
+    if username is None:
+        return False, "This activation link is invalid, expired, or already used."
+    user = User.query.filter_by(username=username).first()
+    if user is None:
+        return False, "Account no longer exists."
+    user.set_password(new_password)
+    row = PasswordActivation.query.filter_by(
+        token_hash=_hash_activation_token(token)
+    ).first()
+    row.used_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db_session.commit()
+    username_cache.pop(f"user-{username}", None)
+    return True, username
 
 
 def init_db():

@@ -1083,3 +1083,220 @@ def change_password_api():
     except Exception as e:
         logger.exception(f"Error changing password: {e}")
         return jsonify({"status": "error", "message": "Failed to change password"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Account activation (one-time set-password link)
+#
+# Provisioning no longer emails a temp password. The provisioner creates the
+# admin user with a random throwaway password, mints a single-use token
+# (database.user_db.create_password_activation) and the welcome email links
+# to /activate?token=... (React page) which drives this endpoint.
+# ---------------------------------------------------------------------------
+
+
+@auth_bp.route("/activate", methods=["POST"])
+@limiter.limit(RESET_RATE_LIMIT)
+def activate_account():
+    """Two-step JSON API for the /activate page.
+
+    step=validate {token}              → {"status","username"} (live token?)
+    step=set      {token,new_password} → sets the password, burns the token
+    """
+    from database.user_db import (
+        consume_password_activation,
+        validate_password_activation,
+    )
+
+    data = request.get_json(silent=True) or request.form
+    step = (data.get("step") or "").strip()
+    token = (data.get("token") or "").strip()
+
+    if step == "validate":
+        username = validate_password_activation(token)
+        if username is None:
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "This activation link is invalid, expired, or already used.",
+                }
+            ), 400
+        return jsonify({"status": "success", "username": username})
+
+    if step == "set":
+        new_password = data.get("new_password") or ""
+        from utils.auth_utils import validate_password_strength
+
+        is_valid, error_message = validate_password_strength(new_password)
+        if not is_valid:
+            return jsonify({"status": "error", "message": error_message}), 400
+
+        ok, result = consume_password_activation(token, new_password)
+        if not ok:
+            return jsonify({"status": "error", "message": result}), 400
+
+        logger.info(f"[ACTIVATE] Password set via activation link for: {result}")
+        try:
+            from utils.audit import audit_log
+
+            audit_log(
+                actor="customer",
+                action="auth.activate",
+                resource=result,
+                src_ip=get_real_ip(),
+                status="ok",
+            )
+        except Exception:
+            pass
+        return jsonify({"status": "success", "username": result})
+
+    return jsonify({"status": "error", "message": "Unknown step"}), 400
+
+
+# ---------------------------------------------------------------------------
+# "Sign in with Google" via the hostingsol central SSO broker.
+#
+# Google OAuth doesn't allow wildcard redirect URIs, so per-instance Google
+# clients are impossible. Instead a CENTRAL broker (hostingsol landing, one
+# Google client) runs the OAuth dance and redirects back here with a
+# short-lived RS256 assertion we verify offline:
+#
+#   /auth/google/start ──▶ {SSO_BROKER_URL}/sso/google/start?instance=..&state=..
+#       ──▶ Google ──▶ broker callback ──▶ /auth/google/callback?assertion=..
+#
+# Required env (stamped by the provisioner; all three or the feature is off):
+#   SSO_BROKER_URL          e.g. https://hostingsol.alphaquark.in
+#   SSO_INSTANCE_ID         this instance's subdomain (JWT audience)
+#   SSO_JWT_PUBLIC_KEY_B64  base64(PEM) of the broker's RS256 public key
+#
+# The Google account's email must equal an existing local user's email —
+# SSO is an alternative front door, never an account-creation path. Local
+# password + TOTP keep working regardless (Google outage ≠ lockout).
+# ---------------------------------------------------------------------------
+
+
+def _sso_config():
+    broker_url = (os.getenv("SSO_BROKER_URL") or "").strip().rstrip("/")
+    instance_id = (os.getenv("SSO_INSTANCE_ID") or "").strip()
+    pub_b64 = (os.getenv("SSO_JWT_PUBLIC_KEY_B64") or "").strip()
+    if not (broker_url and instance_id and pub_b64):
+        return None
+    import base64
+
+    try:
+        public_key_pem = base64.b64decode(pub_b64).decode()
+    except Exception:
+        logger.error("SSO_JWT_PUBLIC_KEY_B64 is not valid base64 — SSO disabled")
+        return None
+    return {
+        "broker_url": broker_url,
+        "instance_id": instance_id,
+        "public_key_pem": public_key_pem,
+    }
+
+
+@auth_bp.route("/sso-config", methods=["GET"])
+def sso_config():
+    """Tells the login page whether to render the Google button."""
+    return jsonify({"google_enabled": _sso_config() is not None})
+
+
+@auth_bp.route("/google/start", methods=["GET"])
+@limiter.limit(LOGIN_RATE_LIMIT_HOUR)
+def google_sso_start():
+    cfg = _sso_config()
+    if cfg is None:
+        return redirect("/login?sso_error=Google+sign-in+is+not+configured")
+    state = secrets.token_urlsafe(24)
+    session["sso_state"] = state
+    from urllib.parse import urlencode
+
+    q = urlencode({"instance": cfg["instance_id"], "state": state})
+    return redirect(f"{cfg['broker_url']}/sso/google/start?{q}")
+
+
+@auth_bp.route("/google/callback", methods=["GET"])
+@limiter.limit(LOGIN_RATE_LIMIT_HOUR)
+def google_sso_callback():
+    from urllib.parse import quote
+
+    def _fail(msg):
+        logger.warning(f"[SSO] Google sign-in rejected: {msg}")
+        return redirect(f"/login?sso_error={quote(msg)}")
+
+    cfg = _sso_config()
+    if cfg is None:
+        return _fail("Google sign-in is not configured")
+
+    # Upstream (broker) error, e.g. user cancelled at Google.
+    if request.args.get("error"):
+        return _fail(request.args.get("error_description") or request.args["error"])
+
+    assertion = request.args.get("assertion") or ""
+    state = request.args.get("state") or ""
+    expected_state = session.pop("sso_state", None)
+    if not expected_state or state != expected_state:
+        return _fail("Sign-in session expired — please try again")
+
+    import jwt as pyjwt
+
+    try:
+        claims = pyjwt.decode(
+            assertion,
+            cfg["public_key_pem"],
+            algorithms=["RS256"],
+            audience=cfg["instance_id"],
+            issuer="hostingsol-sso",
+            leeway=10,
+            options={"require": ["exp", "aud", "iss"]},
+        )
+    except Exception as e:
+        return _fail(f"Could not verify sign-in assertion ({type(e).__name__})")
+
+    # Bind the assertion to the browser session that started the flow.
+    if claims.get("nonce") != expected_state:
+        return _fail("Sign-in state mismatch — please try again")
+    if not claims.get("email_verified"):
+        return _fail("Google account email is not verified")
+
+    email = (claims.get("email") or "").strip().lower()
+    user = None
+    for candidate in User.query.all():
+        if (candidate.email or "").strip().lower() == email:
+            user = candidate
+            break
+    if user is None:
+        return _fail(
+            "This Google account doesn't match this server's admin email. "
+            "Use your username and password instead."
+        )
+
+    session["user"] = user.username
+    logger.info(f"[SSO] Google sign-in success for: {user.username}")
+    try:
+        from database.auth_db import log_login_attempt
+
+        log_login_attempt(
+            user.username,
+            get_real_ip(),
+            request.headers.get("User-Agent", ""),
+            status="success",
+            login_type="sso_google",
+        )
+    except Exception:
+        pass
+    try:
+        from utils.audit import audit_log
+
+        audit_log(
+            actor="customer",
+            action="session.login",
+            resource=user.username,
+            src_ip=get_real_ip(),
+            status="ok",
+            note="google-sso",
+        )
+    except Exception:
+        pass
+
+    return redirect("/broker")
