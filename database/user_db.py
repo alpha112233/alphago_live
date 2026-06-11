@@ -105,9 +105,15 @@ class User(Base):
             return False
 
     def get_totp_uri(self):
-        """Get the TOTP URI for QR code generation"""
+        """Get the TOTP URI for QR code generation.
+
+        Issuer = brand name (shows in the user's authenticator app). Only
+        affects NEW enrollments — existing entries keep working since the
+        secret is unchanged.
+        """
+        from utils.config import get_brand_name
         return pyotp.totp.TOTP(self.get_totp_secret()).provisioning_uri(
-            name=self.email, issuer_name="OpenAlgo"
+            name=self.email, issuer_name=get_brand_name()
         )
 
     def verify_totp(self, token):

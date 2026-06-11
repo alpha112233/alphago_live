@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  ExternalLink,
   Key,
   Loader2,
   Lock,
@@ -654,15 +653,6 @@ export default function SamcoAuth() {
                   <ArrowLeft className="h-3 w-3" />
                   Back to Broker Selection
                 </Link>
-                <a
-                  href="https://docs.openalgo.in"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:underline inline-flex items-center gap-1"
-                >
-                  Documentation
-                  <ExternalLink className="h-3 w-3" />
-                </a>
               </div>
             </div>
           </CardContent>

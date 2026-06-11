@@ -14,14 +14,14 @@ import {
 const sampleStrategy = `"""
 ===============================================================================
                 EMA CROSSOVER WITH FIXED DATETIME HANDLING
-                            OpenAlgo Trading Bot
+                            Alpha Live Trading Bot
 ===============================================================================
 
 Run standalone:
     export OPENALGO_API_KEY="your-api-key"
     python emacrossover_strategy_python.py
 
-Run via OpenAlgo's /python strategy runner:
+Run via the platform's /python strategy runner:
     OPENALGO_API_KEY            : injected per-strategy (PR #1247).
     OPENALGO_STRATEGY_EXCHANGE  : set from the strategy's \`exchange\` config
                                   (NSE / BSE / NFO / BFO / MCX / BCD / CDS / CRYPTO).
@@ -29,7 +29,7 @@ Run via OpenAlgo's /python strategy runner:
                                   the host's calendar/holiday gating, so the two
                                   always agree.
     STRATEGY_ID / STRATEGY_NAME : injected for log/order tagging.
-    HOST_SERVER / WEBSOCKET_URL : inherited from OpenAlgo's .env.
+    HOST_SERVER / WEBSOCKET_URL : inherited from the platform's .env.
     No code changes required.
 """
 
@@ -46,10 +46,10 @@ from openalgo import api
 # ===============================================================================
 
 # API Configuration — read from environment with sensible fallbacks.
-# When launched via OpenAlgo's /python runner, these come from the platform:
+# When launched via the platform's /python runner, these come from the platform:
 #   OPENALGO_API_KEY : injected per-strategy (decrypted from DB)
-#   HOST_SERVER      : inherited from OpenAlgo's .env
-#   WEBSOCKET_URL    : inherited from OpenAlgo's .env
+#   HOST_SERVER      : inherited from the platform's .env
+#   WEBSOCKET_URL    : inherited from the platform's .env
 API_KEY = os.getenv("OPENALGO_API_KEY", "openalgo-apikey")
 API_HOST = os.getenv("HOST_SERVER", "http://127.0.0.1:5000")
 WS_URL = os.getenv("WEBSOCKET_URL", "ws://127.0.0.1:8765")
@@ -303,7 +303,7 @@ export default function PythonStrategyGuide() {
           Python Strategy Guide
         </h1>
         <p className="text-muted-foreground">
-          Self-host automated trading strategies inside OpenAlgo. Each strategy runs as an
+          Run automated trading strategies inside Alpha Live. Each strategy runs as an
           isolated subprocess with its own process, memory, and log file &mdash; managed
           through the <Link to="/python" className="text-primary hover:underline">/python</Link> dashboard.
         </p>
@@ -320,7 +320,7 @@ export default function PythonStrategyGuide() {
             <div className="flex gap-4">
               <Badge className="h-6 w-6 rounded-full flex items-center justify-center shrink-0">1</Badge>
               <div>
-                <p className="font-medium">Install OpenAlgo SDK</p>
+                <p className="font-medium">Install the openalgo SDK</p>
                 <div className="mt-1 flex items-center gap-2">
                   <code className="bg-muted px-2 py-1 rounded text-sm">pip install openalgo</code>
                   <Button
@@ -339,7 +339,7 @@ export default function PythonStrategyGuide() {
                 <p className="font-medium">Get your API Key</p>
                 <p className="text-sm text-muted-foreground">
                   Go to <Link to="/apikey" className="text-primary hover:underline">API Key</Link> page
-                  and copy your OpenAlgo API key
+                  and copy your API key
                 </p>
               </div>
             </div>
@@ -487,8 +487,8 @@ export default function PythonStrategyGuide() {
           <div>
             <p className="font-medium mb-2">Inherited from .env</p>
             <p className="text-sm text-muted-foreground mb-3">
-              Strategies inherit every variable from OpenAlgo's <code>.env</code> via{' '}
-              <code>os.environ.copy()</code>. The key ones for connecting back to OpenAlgo:
+              Strategies inherit every variable from the platform's <code>.env</code> via{' '}
+              <code>os.environ.copy()</code>. The key ones for connecting back to the platform:
             </p>
             <div className="overflow-x-auto">
               <table className="w-full text-sm border-collapse">
@@ -922,7 +922,7 @@ export default function PythonStrategyGuide() {
                   <div className="bg-muted p-3 rounded-lg">
                     <p className="font-medium">Manual Override</p>
                     <p className="mt-1">
-                      Log in to OpenAlgo before the session, wait for master contracts to download,
+                      Log in to Alpha Live before the session, wait for master contracts to download,
                       and click <strong>Start</strong> manually. Click <strong>Stop</strong> when the session ends.
                     </p>
                   </div>
@@ -941,7 +941,7 @@ export default function PythonStrategyGuide() {
                 </p>
                 <p>Master contracts are automatically downloaded when you:</p>
                 <ol className="list-decimal list-inside space-y-1 ml-2">
-                  <li>Log in to OpenAlgo</li>
+                  <li>Log in to Alpha Live</li>
                   <li>Wait for the download to complete (shown in header)</li>
                 </ol>
                 <p className="text-sm">
@@ -957,7 +957,7 @@ export default function PythonStrategyGuide() {
               <AccordionContent className="text-muted-foreground space-y-3">
                 <p>
                   On Linux/macOS, per-strategy resource limits prevent buggy scripts from
-                  crashing OpenAlgo. On Windows, these are not enforced at the OS level.
+                  crashing the platform. On Windows, these are not enforced at the OS level.
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
@@ -1017,10 +1017,10 @@ export default function PythonStrategyGuide() {
 
             <AccordionItem value="restart">
               <AccordionTrigger>
-                What happens if I restart OpenAlgo?
+                What happens if the platform restarts?
               </AccordionTrigger>
               <AccordionContent className="text-muted-foreground space-y-3">
-                <p>OpenAlgo handles restarts gracefully:</p>
+                <p>Alpha Live handles restarts gracefully:</p>
                 <ul className="list-disc list-inside space-y-1 ml-2">
                   <li>Strategy configurations are saved to disk and persist</li>
                   <li>Schedules are automatically re-created for all strategies</li>
@@ -1103,7 +1103,7 @@ export default function PythonStrategyGuide() {
               <AccordionContent className="text-muted-foreground space-y-3">
                 <p>
                   If your strategy needs additional Python libraries, install them in
-                  OpenAlgo's environment.
+                  the platform's environment.
                 </p>
 
                 <div className="space-y-4">
@@ -1115,9 +1115,9 @@ export default function PythonStrategyGuide() {
                         <code>dependencies</code> section
                       </li>
                       <li>
-                        Run <code>uv sync</code> in the openalgo directory
+                        Run <code>uv sync</code> in the application directory
                       </li>
-                      <li>Restart OpenAlgo</li>
+                      <li>Restart the platform</li>
                     </ol>
                   </div>
 
@@ -1131,7 +1131,7 @@ export default function PythonStrategyGuide() {
                         Activate your venv and run{' '}
                         <code>pip install -r requirements.txt</code>
                       </li>
-                      <li>Restart OpenAlgo</li>
+                      <li>Restart the platform</li>
                     </ol>
                   </div>
                 </div>
@@ -1206,7 +1206,7 @@ export default function PythonStrategyGuide() {
       {/* SDK Quick Reference */}
       <Card>
         <CardHeader>
-          <CardTitle>OpenAlgo SDK Quick Reference</CardTitle>
+          <CardTitle>SDK Quick Reference</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3 text-sm">
@@ -1240,14 +1240,14 @@ export default function PythonStrategyGuide() {
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            For complete SDK documentation, visit:{' '}
+            For complete SDK documentation, see the{' '}
             <a
-              href="https://docs.openalgo.in"
+              href="https://support.alphaquark.in"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline"
             >
-              docs.openalgo.in
+              support docs
             </a>
           </p>
         </CardContent>

@@ -720,7 +720,7 @@ def get_session_status():
         )
 
     # Include active session count
-    from database.auth_db import get_active_sessions
+    from database.auth_db import get_active_sessions, get_api_key_for_tradingview
     active_count = len(get_active_sessions(session.get("user")))
 
     return jsonify(
@@ -730,6 +730,12 @@ def get_session_status():
             "logged_in": session.get("logged_in", False),
             "user": session.get("user"),
             "broker": session.get("broker"),
+            # Needed by the SPA even without a broker session: in analyze
+            # (sandbox) mode the orderbook/positions/tradebook pages call
+            # /api/v1/* with this key. Omitting it left the frontend store
+            # empty → those pages silently rendered "No orders today"
+            # (found live 2026-06-11 on test.hostingsol).
+            "api_key": get_api_key_for_tradingview(session.get("user")),
             "active_sessions": active_count,
         }
     )

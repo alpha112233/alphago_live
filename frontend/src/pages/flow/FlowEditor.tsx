@@ -20,7 +20,6 @@ import '@xyflow/react/dist/style.css'
 import {
   ArrowLeft,
   BarChart3,
-  BookOpen,
   Download,
   Home,
   Keyboard,
@@ -353,7 +352,7 @@ function FlowEditorContent() {
         <div className="h-12 border-b border-border flex items-center px-2 bg-card/50">
           <div className="flex items-center gap-2 px-2">
             <img src="/images/android-chrome-192x192.png" alt="Alpha Live Trading" className="w-6 h-6" />
-            <span className="font-semibold text-sm">openalgo</span>
+            <span className="font-semibold text-sm">Alpha Live</span>
           </div>
           <div className="flex-1" />
         </div>
@@ -375,7 +374,7 @@ function FlowEditorContent() {
         <div className="h-12 border-b border-border flex items-center px-2 bg-card/50">
           <div className="flex items-center gap-2 px-2">
             <img src="/images/android-chrome-192x192.png" alt="Alpha Live Trading" className="w-6 h-6" />
-            <span className="font-semibold text-sm">openalgo</span>
+            <span className="font-semibold text-sm">Alpha Live</span>
           </div>
           <div className="flex-1" />
         </div>
@@ -393,7 +392,7 @@ function FlowEditorContent() {
         {/* Left: Logo */}
         <div className="flex items-center gap-2 px-2">
           <img src="/images/android-chrome-192x192.png" alt="Alpha Live Trading" className="w-6 h-6" />
-          <span className="font-semibold text-sm">openalgo</span>
+          <span className="font-semibold text-sm">Alpha Live</span>
         </div>
 
         {/* Center: Workflow Name */}
@@ -478,17 +477,6 @@ function FlowEditorContent() {
                   {item.label}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuItem asChild>
-                <a
-                  href="https://docs.openalgo.in"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2"
-                >
-                  <BookOpen className="h-4 w-4" />
-                  Docs
-                </a>
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setShowLogoutDialog(true)}

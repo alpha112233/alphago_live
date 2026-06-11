@@ -1,6 +1,5 @@
 import {
   BarChart3,
-  BookOpen,
   CheckCircle,
   Database,
   DownloadCloud,
@@ -1539,17 +1538,6 @@ export default function Historify() {
                     {item.label}
                   </DropdownMenuItem>
                 ))}
-                <DropdownMenuItem asChild>
-                  <a
-                    href="https://docs.openalgo.in"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2"
-                  >
-                    <BookOpen className="h-4 w-4" />
-                    Docs
-                  </a>
-                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={() => setShowLogoutDialog(true)}

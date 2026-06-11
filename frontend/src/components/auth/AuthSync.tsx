@@ -58,6 +58,11 @@ export function AuthSync({ children }: AuthSyncProps) {
               isLoggedIn: false,
               loginTime: null,
             })
+            // Still store the API key: analyze/sandbox mode works without a
+            // broker session, and orderbook/positions/tradebook need the key.
+            if (data.api_key) {
+              setApiKey(data.api_key)
+            }
             clearCapabilities()
           } else {
             // Not authenticated or status is not success - clear Zustand store

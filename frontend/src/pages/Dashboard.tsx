@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, FileText, MessageCircle, Search, Zap } from 'lucide-react'
+import { BarChart3, FileText, MessageCircle, Search, Zap } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
@@ -214,17 +214,6 @@ export default function Dashboard() {
       iconBg: 'bg-violet-500/20',
       iconColor: 'text-violet-500',
       borderColor: 'border-violet-500/20 hover:border-violet-500/40',
-    },
-    {
-      href: 'https://docs.openalgo.in',
-      label: 'Documentation',
-      description: 'Tutorials, API docs & features',
-      icon: BookOpen,
-      gradient: 'from-cyan-500/10 to-cyan-500/5 hover:from-cyan-500/20 hover:to-cyan-500/10',
-      iconBg: 'bg-cyan-500/20',
-      iconColor: 'text-cyan-500',
-      borderColor: 'border-cyan-500/20 hover:border-cyan-500/40',
-      external: true,
     },
     {
       href: '/pnl-tracker',
@@ -449,20 +438,6 @@ export default function Dashboard() {
                 </div>
               </div>
             )
-
-            if (card.external) {
-              return (
-                <a
-                  key={card.href}
-                  href={card.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={cardClasses}
-                >
-                  {cardContent}
-                </a>
-              )
-            }
 
             return (
               <Link key={card.href} to={card.href} className={cardClasses}>

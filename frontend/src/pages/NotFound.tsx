@@ -1,4 +1,4 @@
-import { BookOpen, Download, HelpCircle, Home, LogIn } from 'lucide-react'
+import { Download, HelpCircle, Home, LogIn } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 
@@ -56,12 +56,6 @@ export default function NotFound() {
 
         {/* Quick Links */}
         <div className="flex flex-wrap justify-center gap-4">
-          <Button variant="ghost" size="sm" asChild>
-            <a href="https://docs.openalgo.in" target="_blank" rel="noopener noreferrer">
-              <BookOpen className="h-4 w-4 mr-2" />
-              Documentation
-            </a>
-          </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link to="/faq">
               <HelpCircle className="h-4 w-4 mr-2" />

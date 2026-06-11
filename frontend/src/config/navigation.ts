@@ -1,7 +1,6 @@
 import {
   BarChart3,
   Bell,
-  BookOpen,
   Briefcase,
   ClipboardList,
   Code2,
@@ -78,11 +77,6 @@ export const profileMenuItems: NavItem[] = [
   { href: '/leverage', label: 'Leverage', icon: Gauge },
   { href: '/admin', label: 'Admin', icon: Settings },
 ]
-
-// External links
-export const externalLinks = {
-  docs: { href: 'https://docs.openalgo.in', label: 'Docs', icon: BookOpen },
-}
 
 // Shared utility to check if a route is active
 // Uses startsWith for routes with nested pages (like /strategy/*)

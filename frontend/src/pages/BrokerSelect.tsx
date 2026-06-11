@@ -388,7 +388,7 @@ export default function BrokerSelect() {
 
             <div className="flex justify-center lg:justify-start gap-4">
               <Button variant="outline" asChild>
-                <a href="https://docs.openalgo.in" target="_blank" rel="noopener noreferrer">
+                <a href="https://support.alphaquark.in" target="_blank" rel="noopener noreferrer">
                   <BookOpen className="mr-2 h-4 w-4" />
                   Documentation
                 </a>
