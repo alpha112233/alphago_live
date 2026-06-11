@@ -1197,7 +1197,15 @@ def _broker_position_for(broker: str, auth_token: str, symbol: str, exchange: st
         return None
     if not success:
         return None
-    positions = ((resp or {}).get("data") or {}).get("positions") or []
+    # Response-shape difference: the live-broker service returns
+    # data={"positions": [...]} while sandbox_get_positions returns data
+    # as the bare list — handle both (the dict-only assumption crashed
+    # analyze-mode exits with AttributeError, live 2026-06-11).
+    data = (resp or {}).get("data")
+    if isinstance(data, list):
+        positions = data
+    else:
+        positions = (data or {}).get("positions") or []
     for p in positions:
         if (
             (p.get("symbol") or "").upper() == symbol.upper()
