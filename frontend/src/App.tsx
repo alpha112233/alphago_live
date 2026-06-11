@@ -15,6 +15,7 @@ const Faq = lazy(() => import('@/pages/Faq'))
 const Setup = lazy(() => import('@/pages/Setup'))
 const Login = lazy(() => import('@/pages/Login'))
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'))
+const Activate = lazy(() => import('@/pages/Activate'))
 const Download = lazy(() => import('@/pages/Download'))
 const ServerError = lazy(() => import('@/pages/ServerError'))
 const RateLimited = lazy(() => import('@/pages/RateLimited'))
@@ -158,6 +159,7 @@ function App() {
               <Route path="/setup" element={<Setup />} />
               <Route path="/login" element={<Login />} />
               <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/activate" element={<Activate />} />
               <Route path="/download" element={<Download />} />
               <Route path="/error" element={<ServerError />} />
               <Route path="/rate-limited" element={<RateLimited />} />

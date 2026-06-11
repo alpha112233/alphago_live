@@ -73,6 +73,12 @@ def react_reset_password():
     return serve_react_app()
 
 
+# Account activation (one-time set-password link from the welcome email)
+@react_bp.route("/activate")
+def react_activate():
+    return serve_react_app()
+
+
 # Download page
 @react_bp.route("/download")
 def react_download():

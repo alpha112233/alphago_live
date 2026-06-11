@@ -197,7 +197,7 @@ export default function TelegramConfig() {
       {/* Save Button and Documentation */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
         <a
-          href="https://docs.openalgo.in/trading-platform/telegram"
+          href="https://support.alphaquark.in"
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -227,16 +227,16 @@ export default function TelegramConfig() {
         <CardContent className="space-y-4">
           <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
             <p className="text-sm">
-              <span className="font-semibold">Need detailed instructions?</span> Visit our complete{' '}
+              <span className="font-semibold">Need detailed instructions?</span> Visit our{' '}
               <a
-                href="https://docs.openalgo.in/trading-platform/telegram"
+                href="https://support.alphaquark.in"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-primary hover:underline font-semibold"
               >
-                Telegram Bot Setup Guide
+                support docs
               </a>{' '}
-              for step-by-step instructions with screenshots.
+              for step-by-step instructions.
             </p>
           </div>
 

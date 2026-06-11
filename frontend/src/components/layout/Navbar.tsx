@@ -1,4 +1,4 @@
-import { BarChart3, BookOpen, LogOut, Menu, Moon, Sun, Zap } from 'lucide-react'
+import { BarChart3, LogOut, Menu, Moon, Sun, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { showToast } from '@/utils/toast'
@@ -147,16 +147,6 @@ export function Navbar() {
                     {item.label}
                   </Link>
                 ))}
-                <a
-                  href="https://docs.openalgo.in"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors min-h-[44px] touch-manipulation hover:bg-muted active:bg-muted"
-                  onClick={() => setMobileOpen(false)}
-                >
-                  <BookOpen className="h-4 w-4" />
-                  Docs
-                </a>
               </nav>
             </div>
           </SheetContent>
@@ -266,17 +256,6 @@ export function Navbar() {
                   {item.label}
                 </DropdownMenuItem>
               ))}
-              <DropdownMenuItem asChild>
-                <a
-                  href="https://docs.openalgo.in"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-2"
-                >
-                  <BookOpen className="h-4 w-4" />
-                  Docs
-                </a>
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={() => setShowLogoutDialog(true)}

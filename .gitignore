@@ -91,3 +91,5 @@ yarn-error.log*
 
 # Windows NUL file
 nul
+# Claude Code session navigation index — local only, never commit
+docs/CLAUDE_NAV.md

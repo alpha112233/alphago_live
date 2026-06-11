@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Download, HelpCircle, Home, LogOut } from 'lucide-react'
+import { AlertTriangle, Download, HelpCircle, Home, LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { showToast } from '@/utils/toast'
@@ -97,12 +97,6 @@ export default function ServerError() {
 
         {/* Quick Links */}
         <div className="flex flex-wrap justify-center gap-4">
-          <Button variant="ghost" size="sm" asChild>
-            <a href="https://docs.openalgo.in" target="_blank" rel="noopener noreferrer">
-              <BookOpen className="h-4 w-4 mr-2" />
-              Documentation
-            </a>
-          </Button>
           <Button variant="ghost" size="sm" asChild>
             <Link to="/faq">
               <HelpCircle className="h-4 w-4 mr-2" />

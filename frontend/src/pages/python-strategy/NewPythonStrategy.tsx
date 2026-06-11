@@ -12,8 +12,8 @@ import { Label } from '@/components/ui/label'
 import { CRYPTO_EXCHANGE_VALUE, SCHEDULE_DAYS, STRATEGY_EXCHANGES } from '@/types/python-strategy'
 
 const EXAMPLE_STRATEGY = `"""
-Example OpenAlgo Strategy
-This is a minimal example showing how to use the OpenAlgo Python SDK.
+Example Strategy
+This is a minimal example showing how to use the openalgo Python SDK.
 """
 
 import os

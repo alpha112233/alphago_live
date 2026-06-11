@@ -1,14 +1,4 @@
-import {
-  BookOpen,
-  ClipboardList,
-  Download,
-  HelpCircle,
-  LogIn,
-  Menu,
-  MessageCircle,
-  Moon,
-  Sun,
-} from 'lucide-react'
+import { Download, HelpCircle, LogIn, Menu, Moon, Sun } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Footer } from '@/components/layout/Footer'
@@ -23,9 +13,6 @@ export default function Home() {
   const navLinks = [
     { href: '/', label: 'Home', internal: true },
     { href: '/faq', label: 'FAQ', internal: true },
-    { href: 'https://openalgo.in/discord', label: 'Community', internal: false },
-    { href: 'https://openalgo.in/roadmap', label: 'Roadmap', internal: false },
-    { href: 'https://docs.openalgo.in', label: 'Docs', internal: false },
   ]
 
   return (
@@ -85,33 +72,6 @@ export default function Home() {
                     <Download className="h-5 w-5" />
                     Download
                   </Link>
-                  <a
-                    href="https://openalgo.in/discord"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-accent"
-                  >
-                    <MessageCircle className="h-5 w-5" />
-                    Community
-                  </a>
-                  <a
-                    href="https://openalgo.in/roadmap"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-accent"
-                  >
-                    <ClipboardList className="h-5 w-5" />
-                    Roadmap
-                  </a>
-                  <a
-                    href="https://docs.openalgo.in"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-accent"
-                  >
-                    <BookOpen className="h-5 w-5" />
-                    Docs
-                  </a>
                 </div>
               </SheetContent>
             </Sheet>
@@ -163,8 +123,8 @@ export default function Home() {
         <div className="container">
           <div className="text-center max-w-3xl mx-auto">
             <h1 className="text-5xl font-bold mb-8">
-              Your Personal <span className="text-primary">Algo Trading</span>{' '}
-              <span className="text-primary">Platform</span>
+              Alpha Live &mdash; A Terminal for{' '}
+              <span className="text-primary">Serious Traders</span>
             </h1>
             <p className="text-xl mb-8 text-muted-foreground">
               Connect your algo strategies and run from any platform - Amibroker, TradingView,

@@ -1,4 +1,4 @@
-import { AlertTriangle, BookOpen, Copy, ExternalLink, Info, RefreshCw } from 'lucide-react'
+import { AlertTriangle, BookOpen, Copy, Info, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { showToast } from '@/utils/toast'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -420,16 +420,6 @@ export default function GoCharting() {
                 <Button asChild variant="outline" size="sm">
                   <a href="/docs/gocharting_webhook_setup.md" download>
                     Download Guide
-                  </a>
-                </Button>
-                <Button asChild variant="default" size="sm">
-                  <a
-                    href="https://docs.openalgo.in/trading-platform/gocharting"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Online Docs
-                    <ExternalLink className="h-4 w-4 ml-2" />
                   </a>
                 </Button>
               </div>

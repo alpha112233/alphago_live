@@ -66,4 +66,4 @@ def get_brand_name() -> str:
 
 def get_brand_tagline() -> str:
     """Tagline shown under the brand name. Defaults to 'Your own trading platform'."""
-    return os.getenv("BRAND_TAGLINE", "Your own trading platform")
+    return os.getenv("BRAND_TAGLINE", "A terminal for serious traders")

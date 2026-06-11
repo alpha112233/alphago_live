@@ -1,13 +1,4 @@
-import {
-  BookOpen,
-  ClipboardList,
-  Download,
-  HelpCircle,
-  Menu,
-  MessageCircle,
-  Moon,
-  Sun,
-} from 'lucide-react'
+import { BookOpen, Download, HelpCircle, Menu, MessageCircle, Moon, Sun } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Footer } from '@/components/layout/Footer'
@@ -27,24 +18,24 @@ const faqData = [
     category: 'General',
     questions: [
       {
-        question: 'What is OpenAlgo?',
+        question: 'What is Alpha Live?',
         answer:
-          'OpenAlgo is an open-source algorithmic trading platform that provides a unified API layer across 24+ Indian brokers. It enables seamless integration with TradingView, Amibroker, Excel, Python, and AI agents, allowing traders to automate their trading strategies without being locked into a single broker.',
+          'Alpha Live is a hosted trading terminal for serious traders. It provides a unified API layer across 24+ Indian brokers and integrates seamlessly with TradingView, Amibroker, Excel, Python, and AI agents, letting you automate your trading strategies without being locked into a single broker.',
       },
       {
         question: 'Which brokers are supported?',
         answer:
-          'OpenAlgo supports 24+ Indian brokers including Zerodha, Angel One, Dhan, Fyers, ICICI Direct, HDFC Securities, Kotak Securities, Upstox, 5paisa, Alice Blue, Firstock, Flattrade, IIFL, Jainam, Mastertrust, Motilal Oswal, Nuvama, Paytm Money, Rupeezy, Samco, Shoonya (Finvasia), and more. New brokers are being added regularly.',
+          'Alpha Live supports 24+ Indian brokers including Zerodha, Angel One, Dhan, Fyers, ICICI Direct, Kotak Securities, Upstox, 5paisa, Alice Blue, Firstock, Flattrade, IIFL, Jainam, Mastertrust, Motilal Oswal, Nuvama, Paytm Money, Rupeezy, Samco, Shoonya (Finvasia), and more. New brokers are being added regularly.',
       },
       {
-        question: 'What are the system requirements?',
+        question: 'Do I need to install anything?',
         answer:
-          'OpenAlgo requires Python 3.12 or higher and Node.js 20+ for the frontend. It runs on Windows, macOS, and Linux. For optimal performance, we recommend at least 4GB RAM and a stable internet connection. The application uses SQLite by default, making it lightweight and easy to deploy.',
+          'No. Alpha Live is fully web-based and runs on a dedicated server provisioned for your account. There is nothing to install or maintain — just log in from any modern browser. API access for your own scripts and strategies is available under the API Key page.',
       },
       {
-        question: 'Where can I host OpenAlgo?',
+        question: 'Where does my instance run?',
         answer:
-          'OpenAlgo can be hosted locally on your personal computer, on a VPS (Virtual Private Server), or in the cloud. Popular options include AWS, Google Cloud, DigitalOcean, or any Linux VPS provider. For Indian traders, hosting on an Indian VPS ensures low latency connections to broker servers.',
+          'Each account runs on its own dedicated, managed server with low-latency connectivity to Indian broker APIs. Provisioning, updates, monitoring, and backups are handled for you.',
       },
     ],
   },
@@ -54,17 +45,17 @@ const faqData = [
       {
         question: 'What are the costs involved?',
         answer:
-          'OpenAlgo is completely free and open-source under the AGPL license. There are no licensing fees, subscription costs, or hidden charges. You only pay for your hosting infrastructure (if using cloud/VPS) and standard brokerage charges from your broker. Self-hosting on your own computer is completely free.',
+          'Alpha Live is offered as a hosted subscription that covers your dedicated server, updates, and support. Standard brokerage charges from your broker still apply. For current plans and pricing, contact admin@alphaquark.in.',
       },
       {
-        question: 'How secure is OpenAlgo?',
+        question: 'How secure is Alpha Live?',
         answer:
-          'Security is a top priority. OpenAlgo stores API credentials locally on your machine with encryption. It uses HTTPS for all communications, implements CSRF protection, rate limiting, and secure session management. Since it runs on your own infrastructure, you have complete control over your data. We recommend using strong passwords and enabling 2FA where available.',
+          'Security is a top priority. Your broker API credentials are stored encrypted on your dedicated server, which is isolated from other accounts. All communication uses HTTPS, with CSRF protection, rate limiting, and secure session management. We recommend using a strong password and enabling 2FA where available.',
       },
       {
         question: 'Why do I need to login daily?',
         answer:
-          'Daily login is required by Indian brokers for security compliance. Broker sessions typically expire at the end of each trading day or after a set period (usually around 3 AM IST). This is a regulatory requirement, not an OpenAlgo limitation. The platform makes re-authentication quick and easy with TOTP support for most brokers.',
+          'Daily login is required by Indian brokers for security compliance. Broker sessions typically expire at the end of each trading day or after a set period (usually around 3 AM IST). This is a regulatory requirement, not an Alpha Live limitation. The platform makes re-authentication quick and easy with TOTP support for most brokers.',
       },
     ],
   },
@@ -72,49 +63,44 @@ const faqData = [
     category: 'Features & Integration',
     questions: [
       {
-        question: 'Which platforms can I integrate with OpenAlgo?',
+        question: 'Which platforms can I integrate with Alpha Live?',
         answer:
-          'OpenAlgo integrates with TradingView (via webhooks), Amibroker (via AFL), GoCharting, ChartInk, MetaTrader, Excel, Google Sheets, Python, Node.js, Go, N8N, and any platform that can send HTTP webhooks. You can also use the REST API directly from any programming language.',
+          'Alpha Live integrates with TradingView (via webhooks), Amibroker (via AFL), GoCharting, ChartInk, MetaTrader, Excel, Google Sheets, Python, Node.js, Go, N8N, and any platform that can send HTTP webhooks. You can also use the REST API directly from any programming language.',
       },
       {
-        question: 'Does OpenAlgo support sandbox trading?',
+        question: 'Does Alpha Live support sandbox trading?',
         answer:
-          'Yes! OpenAlgo includes an Analyzer/Sandbox mode with sandbox capital of Rs. 1 Crore. This allows you to test strategies in a realistic environment with proper margin calculations, auto square-off at exchange timings, and complete isolation from live trading. Perfect for testing before going live.',
+          'Yes! Alpha Live includes an Analyzer/Sandbox mode with sandbox capital of Rs. 1 Crore. This allows you to test strategies in a realistic environment with proper margin calculations, auto square-off at exchange timings, and complete isolation from live trading. Perfect for testing before going live.',
       },
       {
         question: 'Can I run multiple strategies simultaneously?',
         answer:
-          'Yes, OpenAlgo supports running multiple strategies simultaneously. You can create different webhook endpoints for different strategies, manage them independently, and monitor their performance through the dashboard. The Action Center allows you to control execution modes for each strategy.',
+          'Yes, Alpha Live supports running multiple strategies simultaneously. You can create different webhook endpoints for different strategies, manage them independently, and monitor their performance through the dashboard. The Action Center allows you to control execution modes for each strategy.',
       },
       {
-        question: 'Does OpenAlgo provide real-time market data?',
+        question: 'Does Alpha Live provide real-time market data?',
         answer:
-          'Yes, OpenAlgo includes a unified WebSocket server that streams real-time market data from your broker. This data is used for live position tracking, P&L updates, and can be accessed by your strategies. The data is normalized across all brokers for consistent handling.',
+          'Yes, Alpha Live includes a unified WebSocket server that streams real-time market data from your broker. This data is used for live position tracking, P&L updates, and can be accessed by your strategies. The data is normalized across all brokers for consistent handling.',
       },
     ],
   },
   {
-    category: 'Licensing & Usage',
+    category: 'Usage & Support',
     questions: [
       {
-        question: 'Can I use OpenAlgo for my proprietary trading strategies?',
+        question: 'Can I use Alpha Live for my proprietary trading strategies?',
         answer:
-          'Yes, you can use OpenAlgo for your personal or proprietary trading strategies. The AGPL license allows free use for personal trading. However, if you modify OpenAlgo and provide it as a service to others, you must make your modifications open source.',
+          'Yes. Your strategies, configurations, and trading data stay on your dedicated server and are never shared. You are free to run personal or proprietary strategies of any kind.',
       },
       {
-        question: 'Can I rebrand OpenAlgo for commercial use?',
+        question: 'Can I integrate Alpha Live with GPT/AI assistants?',
         answer:
-          'Under the AGPL license, you can modify OpenAlgo, but any derivative work must also be open source and credit the original project. For commercial licensing options that allow rebranding without open-source requirements, please contact the OpenAlgo team.',
+          'Yes! Alpha Live provides REST APIs that can be called from AI assistants, chatbots, or any automated system. You can build AI-powered trading assistants that use Alpha Live to execute trades based on natural language commands or AI analysis.',
       },
       {
-        question: 'Can I charge others for using my OpenAlgo setup?',
+        question: 'How do I get support?',
         answer:
-          'If you provide OpenAlgo as a service to others (even if modified), the AGPL license requires you to share your source code. For commercial service offerings without this requirement, commercial licensing options are available.',
-      },
-      {
-        question: 'Can I integrate OpenAlgo with GPT/AI assistants?',
-        answer:
-          'Yes! OpenAlgo provides REST APIs that can be called from AI assistants, chatbots, or any automated system. You can build AI-powered trading assistants that use OpenAlgo to execute trades based on natural language commands or AI analysis.',
+          'Email admin@alphaquark.in for account, billing, or technical support. Step-by-step guides are available at support.alphaquark.in.',
       },
     ],
   },
@@ -127,9 +113,6 @@ export default function Faq() {
   const navLinks = [
     { href: '/', label: 'Home', internal: true },
     { href: '/faq', label: 'FAQ', internal: true },
-    { href: 'https://openalgo.in/discord', label: 'Community', internal: false },
-    { href: 'https://openalgo.in/roadmap', label: 'Roadmap', internal: false },
-    { href: 'https://docs.openalgo.in', label: 'Docs', internal: false },
   ]
 
   return (
@@ -189,33 +172,6 @@ export default function Faq() {
                     <Download className="h-5 w-5" />
                     Download
                   </Link>
-                  <a
-                    href="https://openalgo.in/discord"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-accent"
-                  >
-                    <MessageCircle className="h-5 w-5" />
-                    Community
-                  </a>
-                  <a
-                    href="https://openalgo.in/roadmap"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-accent"
-                  >
-                    <ClipboardList className="h-5 w-5" />
-                    Roadmap
-                  </a>
-                  <a
-                    href="https://docs.openalgo.in"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-4 py-2 rounded-md hover:bg-accent"
-                  >
-                    <BookOpen className="h-5 w-5" />
-                    Docs
-                  </a>
                 </div>
               </SheetContent>
             </Sheet>
@@ -269,7 +225,7 @@ export default function Faq() {
           <div className="text-center mb-12">
             <h1 className="text-4xl lg:text-5xl font-bold mb-4">Frequently Asked Questions</h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Find answers to common questions about OpenAlgo, its features, security, and licensing.
+              Find answers to common questions about Alpha Live, its features, security, and usage.
             </p>
           </div>
 
@@ -280,13 +236,13 @@ export default function Faq() {
                 <CardHeader>
                   <CardTitle>{category.category}</CardTitle>
                   <CardDescription>
-                    {category.category === 'General' && 'Basic information about OpenAlgo'}
+                    {category.category === 'General' && 'Basic information about Alpha Live'}
                     {category.category === 'Costs & Security' &&
                       'Pricing, security, and compliance details'}
                     {category.category === 'Features & Integration' &&
                       'Platform capabilities and integrations'}
-                    {category.category === 'Licensing & Usage' &&
-                      'License terms and usage guidelines'}
+                    {category.category === 'Usage & Support' &&
+                      'Usage guidelines and getting help'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -308,18 +264,22 @@ export default function Faq() {
           {/* Resources Section */}
           <div className="max-w-4xl mx-auto mt-16">
             <h2 className="text-2xl font-bold text-center mb-8">Need More Help?</h2>
-            <div className="grid md:grid-cols-3 gap-6">
+            <div className="grid md:grid-cols-2 gap-6">
               <Card className="text-center">
                 <CardHeader>
                   <BookOpen className="h-10 w-10 mx-auto text-primary" />
-                  <CardTitle className="text-lg">Documentation</CardTitle>
+                  <CardTitle className="text-lg">Support Docs</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Comprehensive guides and API references
+                    Step-by-step guides and API references
                   </p>
                   <Button variant="outline" asChild>
-                    <a href="https://docs.openalgo.in" target="_blank" rel="noopener noreferrer">
+                    <a
+                      href="https://support.alphaquark.in"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
                       Read Docs
                     </a>
                   </Button>
@@ -329,43 +289,14 @@ export default function Faq() {
               <Card className="text-center">
                 <CardHeader>
                   <MessageCircle className="h-10 w-10 mx-auto text-primary" />
-                  <CardTitle className="text-lg">Discord Community</CardTitle>
+                  <CardTitle className="text-lg">Contact Support</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Join our active community for support
+                    Questions about your account or setup? We are happy to help.
                   </p>
                   <Button variant="outline" asChild>
-                    <a href="https://openalgo.in/discord" target="_blank" rel="noopener noreferrer">
-                      Join Discord
-                    </a>
-                  </Button>
-                </CardContent>
-              </Card>
-
-              <Card className="text-center">
-                <CardHeader>
-                  <svg
-                    className="h-10 w-10 mx-auto text-primary"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
-                  </svg>
-                  <CardTitle className="text-lg">GitHub</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Report issues or contribute to the project
-                  </p>
-                  <Button variant="outline" asChild>
-                    <a
-                      href="https://github.com/marketcalls/openalgo"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      View GitHub
-                    </a>
+                    <a href="mailto:admin@alphaquark.in">Email Support</a>
                   </Button>
                 </CardContent>
               </Card>
