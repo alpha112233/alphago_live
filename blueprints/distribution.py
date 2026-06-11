@@ -1152,8 +1152,15 @@ def _broker_status_for_order(broker: str, auth_token: str, broker_order_id: str)
     or None if we couldn't read the orderbook."""
     try:
         from services.orderbook_service import get_orderbook_with_auth
+        # original_data routes the read to the SANDBOX orderbook when
+        # analyze mode is on (entry/cancel/close already pass it — the
+        # status read was the one leg still hitting the LIVE broker, so
+        # analyze-mode exits 503'd with "could not read order ... refusing
+        # to act blindly"; found live 2026-06-11). In LIVE mode the service
+        # ignores it and uses auth_token as before.
         success, resp, _http = get_orderbook_with_auth(
-            auth_token=auth_token, broker=broker, original_data=None,
+            auth_token=auth_token, broker=broker,
+            original_data={"apikey": "distribution-internal"},
         )
     except Exception:
         logger.exception("_broker_status_for_order: orderbook fetch raised")
@@ -1180,8 +1187,10 @@ def _broker_position_for(broker: str, auth_token: str, symbol: str, exchange: st
     never overshoot the actual position (Layer-1 close discipline)."""
     try:
         from services.positionbook_service import get_positionbook_with_auth
+        # Same analyze-mode routing as _broker_status_for_order above.
         success, resp, _http = get_positionbook_with_auth(
-            auth_token=auth_token, broker=broker, original_data=None,
+            auth_token=auth_token, broker=broker,
+            original_data={"apikey": "distribution-internal"},
         )
     except Exception:
         logger.exception("_broker_position_for: positionbook fetch raised")
