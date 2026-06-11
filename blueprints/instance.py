@@ -20,6 +20,8 @@ import csv
 import io
 import logging
 import os
+
+from database.instance_config_db import get_config
 from datetime import datetime, timezone
 
 from flask import Blueprint, Response, jsonify, request, session
@@ -61,19 +63,19 @@ def _network_identity() -> dict:
     All come from per-customer env vars written by the provisioner."""
     subdomain = (os.getenv("HSOL_SUBDOMAIN") or "").strip()
     host_server = (os.getenv("HOST_SERVER") or "").strip()
-    ipv4_pool_csv = (os.getenv("EGRESS_V4_POOL_IPS") or "").strip()
+    ipv4_pool_csv = get_config("EGRESS_V4_POOL_IPS")
     ipv4_pool = [ip.strip() for ip in ipv4_pool_csv.split(",") if ip.strip()] if ipv4_pool_csv else []
     return {
         "subdomain": subdomain,
         "url": host_server or (f"https://{subdomain}.hostingsol.alphaquark.in" if subdomain else ""),
         "ipv6": os.getenv("CLIENT_IPV6") or "",
-        "ipv4_primary": os.getenv("EGRESS_V4_PRIMARY_IP") or "",
-        "ipv4_secondary": os.getenv("EGRESS_V4_SECONDARY_IP") or "",
+        "ipv4_primary": get_config("EGRESS_V4_PRIMARY_IP"),
+        "ipv4_secondary": get_config("EGRESS_V4_SECONDARY_IP"),
         # If only one entry in pool == primary, it's truly dedicated.
         # If >1, it's pool-routing (V1 mode); we don't ship that anymore
         # but the field stays consistent.
         "ipv4_pool": ipv4_pool,
-        "is_ipv4_dedicated": len(ipv4_pool) <= 1 and bool(os.getenv("EGRESS_V4_PRIMARY_IP")),
+        "is_ipv4_dedicated": len(ipv4_pool) <= 1 and bool(get_config("EGRESS_V4_PRIMARY_IP")),
     }
 
 

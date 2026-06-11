@@ -5,6 +5,8 @@ Handles reading and updating broker credentials in the .env file.
 """
 
 import os
+
+from database.instance_config_db import get_config
 import re
 
 from flask import Blueprint, jsonify, request
@@ -603,7 +605,7 @@ def activate_credentials_endpoint(broker: str):
 
     broker = (broker or "").strip().lower()
 
-    if broker_needs_v4(broker) and not (os.getenv("EGRESS_V4_PRIMARY_IP") or "").strip():
+    if broker_needs_v4(broker) and not get_config("EGRESS_V4_PRIMARY_IP"):
         return jsonify({
             "status": "error",
             "needs_v4_ip": True,
@@ -672,10 +674,15 @@ def request_v4_ip_endpoint():
         }), 503
 
     try:
+        # apply=self: WE write the returned proxy config into instance_config
+        # (DB) and refresh the httpx mounts in-process — the admin service
+        # must NOT rewrite our env + recreate the container (which killed
+        # the customer's session mid-click). Old admin services ignore the
+        # flag and fall back to the legacy env-write+recreate behaviour.
         r = _rq.post(
             f"{hsol_base}/api/clients/{subdomain}/allocate-v4",
             headers={"Authorization": f"Bearer {secret}"},
-            json={"broker": broker},
+            json={"broker": broker, "apply": "self"},
             timeout=120,
         )
         # 503 with status=exhausted is a clean signal — propagate.
@@ -686,6 +693,24 @@ def request_v4_ip_endpoint():
             }), 503
         r.raise_for_status()
         result = r.json()
+
+        # New-style response carries the full config — apply it ourselves:
+        # DB write + httpx mount refresh, zero downtime. Absent proxy_url
+        # means an old admin service handled it the legacy way (env write +
+        # container recreate) — keep the old messaging for that.
+        applied_live = False
+        if result.get("proxy_url"):
+            from database.instance_config_db import set_configs
+            from utils.httpx_client import reset_httpx_client
+
+            set_configs({
+                "EGRESS_V4_PROXY_PRIMARY": result["proxy_url"],
+                "EGRESS_V4_PRIMARY_IP": result.get("ip") or "",
+                "EGRESS_V4_POOL_IPS": result.get("pool_ips") or "",
+            })
+            reset_httpx_client()
+            applied_live = True
+
         try:
             from utils.audit import audit_log
             src = (request.headers.get("X-Forwarded-For") or request.remote_addr or "").split(",")[0].strip()
@@ -696,22 +721,28 @@ def request_v4_ip_endpoint():
                     "ip": result.get("ip"),
                     "port": result.get("port"),
                     "broker_requested": broker,
-                    "container_restart_triggered": True,
+                    "applied_live": applied_live,
+                    "container_restart_triggered": not applied_live,
                 },
                 src_ip=src, status="ok",
-                note=f"hostingsol allocate-v4 allocated {result.get('ip')} for {broker}; container restarting",
+                note=f"hostingsol allocate-v4 allocated {result.get('ip')} for {broker}"
+                     + ("; applied live (no restart)" if applied_live else "; container restarting"),
             )
         except Exception:
             pass
-        return jsonify({
-            "status": "success",
-            "ip": result.get("ip"),
-            "message": (
+        if applied_live:
+            message = (
+                f"Allocated IP {result.get('ip')} — active immediately, no restart "
+                f"needed. Whitelist {result.get('ip')} in your {broker} developer "
+                f"console, then activate the broker."
+            )
+        else:
+            message = (
                 f"Allocated IP {result.get('ip')}. Your container is restarting now "
                 f"(takes ~30 seconds). After it's back, whitelist {result.get('ip')} "
                 f"in your {broker} developer console, then activate the broker again."
-            ),
-        })
+            )
+        return jsonify({"status": "success", "ip": result.get("ip"), "message": message})
     except _rq.HTTPError as e:
         return jsonify({"status": "error", "message": f"allocator http error: {e}"}), 502
     except Exception as e:
@@ -766,14 +797,14 @@ def broker_instructions_endpoint(broker: str):
         # super-admin for failover and is optional. Both must be
         # whitelisted at IPv4-only brokers (Arihant etc.) to enable
         # transparent failover when the primary is unreachable.
-        "client_ipv4_primary": os.getenv("EGRESS_V4_PRIMARY_IP", ""),
-        "client_ipv4_secondary": os.getenv("EGRESS_V4_SECONDARY_IP", ""),
+        "client_ipv4_primary": get_config("EGRESS_V4_PRIMARY_IP"),
+        "client_ipv4_secondary": get_config("EGRESS_V4_SECONDARY_IP"),
         # V1 ship 2026-06-05: shared-pool routing — every customer's
         # traffic load-balances across all IPs in EGRESS_V4_POOL_IPS. The
         # primary is the customer's "preferred" IP but ANY pool IP can
         # show up at the broker. Customer must whitelist ALL of these.
         "client_ipv4_pool": [
-            ip.strip() for ip in (os.getenv("EGRESS_V4_POOL_IPS", "") or "").split(",") if ip.strip()
+            ip.strip() for ip in get_config("EGRESS_V4_POOL_IPS").split(",") if ip.strip()
         ],
         # Legacy shared host v4 — kept for back-compat; dashboard shows
         # it only as a fallback when no per-customer Decodo IP is set.
@@ -802,11 +833,11 @@ def host_info_endpoint():
         # super-admin for failover and is optional. Both must be
         # whitelisted at IPv4-only brokers (Arihant etc.) to enable
         # transparent failover when the primary is unreachable.
-        "client_ipv4_primary": os.getenv("EGRESS_V4_PRIMARY_IP", ""),
-        "client_ipv4_secondary": os.getenv("EGRESS_V4_SECONDARY_IP", ""),
+        "client_ipv4_primary": get_config("EGRESS_V4_PRIMARY_IP"),
+        "client_ipv4_secondary": get_config("EGRESS_V4_SECONDARY_IP"),
         # V1 ship 2026-06-05: shared-pool routing — see /credentials/<broker>.
         "client_ipv4_pool": [
-            ip.strip() for ip in (os.getenv("EGRESS_V4_POOL_IPS", "") or "").split(",") if ip.strip()
+            ip.strip() for ip in get_config("EGRESS_V4_POOL_IPS").split(",") if ip.strip()
         ],
         # Legacy shared host v4 — kept for back-compat; dashboard shows
         # it only as a fallback when no per-customer Decodo IP is set.

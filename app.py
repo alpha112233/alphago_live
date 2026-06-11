@@ -101,6 +101,7 @@ from database.latency_db import init_latency_db as ensure_latency_tables_exists
 from database.leverage_db import init_db as ensure_leverage_tables_exists
 from database.sandbox_db import init_db as ensure_sandbox_tables_exists
 from database.settings_db import init_db as ensure_settings_tables_exists
+from database.instance_config_db import init_db as ensure_instance_config_tables_exists
 from database.strategy_db import init_db as ensure_strategy_tables_exists
 from database.symbol import init_db as ensure_master_contract_tables_exists
 from database.telegram_db import get_bot_config
@@ -569,6 +570,7 @@ def setup_environment(app):
                 ("API Log DB", ensure_api_log_tables_exists),
                 ("Analyzer DB", ensure_analyzer_tables_exists),
                 ("Settings DB", ensure_settings_tables_exists),
+                ("Instance Config DB", ensure_instance_config_tables_exists),
                 ("Chartink DB", ensure_chartink_tables_exists),
                 ("Traffic Logs DB", ensure_traffic_logs_exists),
                 ("Latency DB", ensure_latency_tables_exists),

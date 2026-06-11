@@ -95,8 +95,21 @@ def broker_needs_v4(broker: str) -> bool:
     return (broker or "").strip().lower() in V4_ONLY_BROKERS
 
 
+def _cfg(key: str) -> str:
+    """Operational egress config: DB-backed (instance_config) with env
+    fallback — allocations/heals apply WITHOUT a container restart (the
+    env-only read forced a recreate on every v4 allocation; 2026-06-11).
+    Lazy import + exception-safe: this module loads very early, possibly
+    before the DB exists."""
+    try:
+        from database.instance_config_db import get_config
+        return get_config(key)
+    except Exception:
+        return (os.getenv(key) or "").strip()
+
+
 def _hosts_set() -> set[str]:
-    extra = (os.getenv("EGRESS_V4_HOSTS") or "").strip()
+    extra = _cfg("EGRESS_V4_HOSTS")
     if not extra:
         return DEFAULT_V4_HOSTS
     return DEFAULT_V4_HOSTS | {h.strip().lower() for h in extra.split(",") if h.strip()}
@@ -117,22 +130,22 @@ def needs_v4_proxy(url_or_host: str) -> bool:
 def primary_proxy_url() -> Optional[str]:
     """Full proxy URL (with auth) for the customer's primary Decodo IP.
     None if not configured — caller should fall back to direct egress."""
-    return (os.getenv("EGRESS_V4_PROXY_PRIMARY") or "").strip() or None
+    return _cfg("EGRESS_V4_PROXY_PRIMARY") or None
 
 
 def secondary_proxy_url() -> Optional[str]:
     """Full proxy URL (with auth) for the customer's optional secondary
     Decodo IP. None if not configured — failover is disabled."""
-    return (os.getenv("EGRESS_V4_PROXY_SECONDARY") or "").strip() or None
+    return _cfg("EGRESS_V4_PROXY_SECONDARY") or None
 
 
 def primary_ip() -> str:
     """Just the IP — for dashboard display. Empty string if not configured."""
-    return (os.getenv("EGRESS_V4_PRIMARY_IP") or "").strip()
+    return _cfg("EGRESS_V4_PRIMARY_IP")
 
 
 def secondary_ip() -> str:
-    return (os.getenv("EGRESS_V4_SECONDARY_IP") or "").strip()
+    return _cfg("EGRESS_V4_SECONDARY_IP")
 
 
 class FailoverProxyTransport(httpx.BaseTransport):

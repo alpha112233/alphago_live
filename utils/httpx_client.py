@@ -14,6 +14,20 @@ logger = get_logger(__name__)
 
 # Global httpx client for connection pooling
 _httpx_client = None
+# instance_config version the client was built against — proxy mounts
+# (Decodo per-customer egress) derive from it. When an allocation/heal
+# bumps the version, every worker rebuilds its client on next use instead
+# of requiring a container recreate. The version read is ~30s-cached, so
+# the steady-state cost is a dict lookup.
+_httpx_client_config_version = None
+
+
+def _current_config_version() -> str:
+    try:
+        from database.instance_config_db import get_config_version
+        return get_config_version()
+    except Exception:
+        return "0"
 
 
 def get_httpx_client() -> httpx.Client:
@@ -25,14 +39,45 @@ def get_httpx_client() -> httpx.Client:
     Returns:
         httpx.Client: A configured HTTP client with protocol auto-negotiation
     """
-    global _httpx_client
+    global _httpx_client, _httpx_client_config_version
+
+    version = _current_config_version()
+    if _httpx_client is not None and version != _httpx_client_config_version:
+        logger.info(
+            f"instance_config changed ({_httpx_client_config_version} → {version}) — "
+            "rebuilding shared HTTP client (proxy mounts refresh, no restart)"
+        )
+        try:
+            _httpx_client.close()
+        except Exception:
+            pass
+        _httpx_client = None
 
     if _httpx_client is None:
         _httpx_client = _create_http_client()
+        _httpx_client_config_version = version
         logger.info(
             "Created HTTP client with automatic protocol negotiation (HTTP/2 preferred, HTTP/1.1 fallback)"
         )
     return _httpx_client
+
+
+def reset_httpx_client() -> None:
+    """Force a rebuild on next use — called by the writer right after an
+    egress-config update so the writing worker applies it immediately
+    (other workers converge via the version check within the cache TTL)."""
+    global _httpx_client
+    try:
+        from database.instance_config_db import _cache
+        _cache.clear()
+    except Exception:
+        pass
+    if _httpx_client is not None:
+        try:
+            _httpx_client.close()
+        except Exception:
+            pass
+    _httpx_client = None
 
 
 def request(method: str, url: str, **kwargs) -> httpx.Response:
