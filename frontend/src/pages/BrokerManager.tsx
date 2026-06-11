@@ -637,73 +637,17 @@ export default function BrokerManager() {
                 ICICI Direct, Definedge, FivePaisa, Paytm Money, Zerodha, Flattrade,
                 IndMoney. Unique to your instance — no scarcity, no shared-IP risk.
                 <br />
-                <strong>Do NOT use IPv6 for Arihant, HDFC InvestRight, or Motilal Oswal</strong> —
-                their API endpoints are IPv4-only and will reject v6 traffic.
-                Whitelist the IPv4 address below instead.
+                A few brokers (Arihant, HDFC InvestRight, Motilal Oswal) are
+                IPv4-only — for those, your dedicated IPv4 is shown inside that
+                broker's setup panel below when you select it.
               </p>
             </div>
-            {hostInfo.client_ipv4_pool && hostInfo.client_ipv4_pool.length > 1 ? (
-              <div>
-                <p className="text-xs font-semibold text-emerald-300 mb-1">
-                  IPv4 ISP Pool (whitelist all at IPv4-only brokers)
-                </p>
-                <div className="space-y-1">
-                  {hostInfo.client_ipv4_pool.map((ip) => (
-                    <CopyableCode
-                      key={ip}
-                      value={ip}
-                      label={ip === hostInfo.client_ipv4_primary ? "IPv4 (preferred):" : "IPv4:"}
-                    />
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground pt-1">
-                  Use for: <strong>Arihant Capital</strong> and any other broker whose API
-                  endpoint is IPv4-only. Outbound calls route via a Vodafone Idea ISP pool in
-                  Mumbai, exclusive to our infrastructure. Whitelist <strong>all</strong> IPs
-                  above at each IPv4-only broker — any of them may show up on a given request.
-                </p>
-              </div>
-            ) : hostInfo.client_ipv4_primary ? (
-              <>
-                <div>
-                  <p className="text-xs font-semibold text-emerald-300 mb-1">
-                    Dedicated IPv4 — Primary (per-customer)
-                  </p>
-                  <CopyableCode value={hostInfo.client_ipv4_primary} label="IPv4 (primary):" />
-                  <p className="text-xs text-muted-foreground pt-1">
-                    Use for: <strong>Arihant Capital</strong> and any other broker whose API
-                    endpoint is IPv4-only. Routed via a Vodafone Idea ISP IP from our Mumbai
-                    pool, dedicated to your account.
-                  </p>
-                </div>
-                {hostInfo.client_ipv4_secondary && (
-                  <div>
-                    <p className="text-xs font-semibold text-emerald-300 mb-1">
-                      Dedicated IPv4 — Secondary (failover)
-                    </p>
-                    <CopyableCode value={hostInfo.client_ipv4_secondary} label="IPv4 (secondary):" />
-                    <p className="text-xs text-muted-foreground pt-1">
-                      Failover IP. Whitelist this at the same broker as your primary. If the
-                      primary path is unreachable (Decodo outage, IP issue), outbound calls
-                      transparently use this one. No action needed from you during failover —
-                      just keep both whitelisted.
-                    </p>
-                  </div>
-                )}
-              </>
-            ) : hostInfo.shared_host_ipv4 ? (
-              <div>
-                <p className="text-xs font-semibold text-amber-300 mb-1">
-                  Static IPv4 (shared across customers on this server)
-                </p>
-                <CopyableCode value={hostInfo.shared_host_ipv4} label="IPv4:" />
-                <p className="text-xs text-muted-foreground pt-1">
-                  Use for: <strong>Arihant Capital</strong> (and any other broker whose API
-                  endpoint is IPv4-only). Every customer on this server shares this IP —
-                  contact support to upgrade to a dedicated IPv4.
-                </p>
-              </div>
-            ) : null}
+            {/* IPv4 is deliberately NOT listed here: it's only relevant to
+                IPv4-only brokers, and the per-broker setup panel shows the
+                customer's OWN assigned IPv4 (instructions.client_ipv4_primary,
+                gated on v4_required). The old global "pool — whitelist all"
+                list confused customers into whitelisting 10 unrelated IPs
+                (removed 2026-06-11). */}
             {hostInfo.redirect_url_pattern && (
               <div>
                 <p className="text-xs font-semibold text-slate-300 mb-1">

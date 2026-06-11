@@ -204,7 +204,7 @@ export default function Infrastructure() {
             {info.network.ipv4_primary && (
               <div>
                 <p className="text-xs font-semibold text-emerald-300 mb-1">
-                  IPv4 {info.network.is_ipv4_dedicated ? '(dedicated)' : '(pool)'}
+                  IPv4 (dedicated — used only by IPv4-only brokers)
                 </p>
                 <CopyableValue value={info.network.ipv4_primary} />
               </div>
@@ -215,12 +215,9 @@ export default function Infrastructure() {
                 <CopyableValue value={info.network.ipv4_secondary} />
               </div>
             )}
-            {info.network.ipv4_pool.length > 1 && (
-              <p className="text-xs text-muted-foreground pt-1">
-                Pool routing mode — outbound traffic may use any of {info.network.ipv4_pool.length} IPs.
-                Whitelist all at IPv4-only brokers.
-              </p>
-            )}
+            {/* Pool-routing note removed 2026-06-11: allocation is
+                per-customer dedicated (per-port pinned); the pool list is
+                infra inventory, not something customers whitelist. */}
           </CardContent>
         </Card>
 
