@@ -14,9 +14,15 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Settings cache - 1 hour TTL (settings rarely change)
-# This cache significantly reduces DB queries since get_analyze_mode() is called on every request
-_settings_cache = TTLCache(maxsize=10, ttl=3600)  # 1 hour TTL
+# Settings cache — SHORT TTL by design (2026-06-12). set_analyze_mode()
+# clears only the WRITING process's cache; gunicorn's other workers kept
+# serving the stale mode for the full TTL. At 1 hour that was a real-money
+# hazard: a customer toggles Analyze ON, gets the confirmation (from the
+# worker that handled the toggle), sends signals — and a different worker
+# routes them to the LIVE broker for up to an hour (hit in reverse on
+# test.hostingsol: analyze restored ON, orders still went live). 5s is one
+# local SQLite read per setting per worker per 5s — negligible.
+_settings_cache = TTLCache(maxsize=10, ttl=5)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
