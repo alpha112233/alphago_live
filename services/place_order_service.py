@@ -23,6 +23,20 @@ logger = get_logger(__name__)
 order_schema = OrderSchema()
 
 
+def _res_http_status(res):
+    """Broker plugins return shimmed responses (.status) on success but RAW
+    httpx Responses (.status_code only) — or None — from their error
+    branches. Reading .status directly raised AttributeError and masked the
+    broker's real rejection message (live 2026-06-12: Upstox UDAPI1154
+    surfaced as 'internal error'). Tolerate all three shapes."""
+    if res is None:
+        return None
+    status = getattr(res, "status", None)
+    if status is None:
+        status = getattr(res, "status_code", None)
+    return status
+
+
 def import_broker_module(broker_name: str) -> Any | None:
     """
     Dynamically import the broker-specific order API module.
@@ -216,7 +230,7 @@ def place_order_with_auth(
         ))
         return False, error_response, 500
 
-    if res.status == 200:
+    if _res_http_status(res) == 200:
         order_response_data = {"status": "success", "orderid": order_id}
 
         # Audit: order placement attempt that the broker accepted.

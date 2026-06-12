@@ -237,6 +237,10 @@ def place_order_api(data, auth):
 
     except httpx.HTTPStatusError as e:
         logger.exception(f"HTTP error placing order: {e.response.text}")
+        # Shim .status like the success path does — the service layer reads
+        # it; without this the broker's rejection json (e.g. UDAPI1154 IP
+        # mismatch) was masked by an AttributeError.
+        e.response.status = e.response.status_code
         return e.response, e.response.json(), None
     except Exception as e:
         logger.exception("Unexpected error in place_order_api")

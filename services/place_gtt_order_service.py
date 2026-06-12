@@ -13,6 +13,20 @@ logger = get_logger(__name__)
 API_TYPE = "placegttorder"
 
 
+def _res_http_status(res):
+    """Broker plugins return shimmed responses (.status) on success but RAW
+    httpx Responses (.status_code only) — or None — from their error
+    branches. Reading .status directly raised AttributeError and masked the
+    broker's real rejection message (live 2026-06-12: Upstox UDAPI1154
+    surfaced as 'internal error'). Tolerate all three shapes."""
+    if res is None:
+        return None
+    status = getattr(res, "status", None)
+    if status is None:
+        status = getattr(res, "status_code", None)
+    return status
+
+
 def emit_analyzer_error(request_data: dict[str, Any], error_message: str) -> dict[str, Any]:
     """Publish an analyzer error event and return the error response dict."""
     error_response = {"mode": "analyze", "status": "error", "message": error_message}
@@ -88,7 +102,7 @@ def place_gtt_order_with_auth(
         ))
         return False, error_response, 500
 
-    if res.status == 200 and trigger_id:
+    if _res_http_status(res) == 200 and trigger_id:
         success_response = {"status": "success", "trigger_id": trigger_id}
         # Derive trigger_prices for the event from the flat fields.
         if (order_data.get("trigger_type") or "").upper() == "OCO":

@@ -25,6 +25,20 @@ MAX_ORDERS = 100
 
 
 # Get rate limit from environment (default: 10 per second)
+def _res_http_status(res):
+    """Broker plugins return shimmed responses (.status) on success but RAW
+    httpx Responses (.status_code only) — or None — from their error
+    branches. Reading .status directly raised AttributeError and masked the
+    broker's real rejection message (live 2026-06-12: Upstox UDAPI1154
+    surfaced as 'internal error'). Tolerate all three shapes."""
+    if res is None:
+        return None
+    status = getattr(res, "status", None)
+    if status is None:
+        status = getattr(res, "status_code", None)
+    return status
+
+
 def get_order_rate_limit():
     """Parse ORDER_RATE_LIMIT and return delay in seconds between orders"""
     rate_limit_str = os.getenv("ORDER_RATE_LIMIT", "10 per second")
@@ -109,7 +123,7 @@ def place_single_order(
         # Place the order using place_order_api
         res, response_data, order_id = broker_module.place_order_api(order_data, auth_token)
 
-        if res.status == 200:
+        if _res_http_status(res) == 200:
             # No per-order event emission - a summary event is emitted at the end of all orders
             return {
                 "order_num": order_num,
