@@ -30,6 +30,7 @@ import {
   getHostInfo,
   listSavedBrokers,
   listSupportedBrokers,
+  requestV4Ip,
   saveBroker,
 } from '@/api/brokerManager'
 import {
@@ -127,6 +128,7 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
   const [activateOnSave, setActivateOnSave] = useState(false)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [requestingV4, setRequestingV4] = useState(false)
 
   const isEdit = state.editingBroker !== null
   const broker = isEdit ? state.editingBroker! : selectedBroker
@@ -168,6 +170,26 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
 
   function setField(name: string, value: string) {
     setFieldValues((prev) => ({ ...prev, [name]: value }))
+  }
+
+  // Allocate a dedicated IPv4 for IPv4-only brokers (Arihant, HDFC,
+  // Motilal). The instructional text used to reference this button but it
+  // was never rendered — customers could never actually request an IP.
+  async function handleRequestV4() {
+    if (!broker) return
+    setRequestingV4(true)
+    try {
+      const res = await requestV4Ip(broker)
+      // Re-fetch instructions so client_ipv4_primary now shows the IP
+      // (applied live in the container — no restart on new images).
+      const refreshed = await getBrokerInstructions(broker)
+      setInstructions(refreshed)
+      showToast.success(`Dedicated IPv4 assigned: ${res.ip}. Whitelist it at ${broker}, then activate.`)
+    } catch (e) {
+      showToast.error(e instanceof Error ? e.message : 'Could not allocate an IPv4 IP')
+    } finally {
+      setRequestingV4(false)
+    }
   }
 
   async function handleSave() {
@@ -298,10 +320,21 @@ function BrokerFormSheet({ state, onClose, onSaved, supported }: BrokerFormSheet
                         label="Whitelist this IPv4:"
                       />
                     ) : (
-                      <p className="text-xs text-amber-300">
-                        This broker needs an IPv4 IP. Click "Request dedicated IPv4 IP"
-                        below to allocate one, then whitelist it at the broker.
-                      </p>
+                      <div className="space-y-2">
+                        <p className="text-xs text-amber-300">
+                          This broker needs a dedicated IPv4 address. Allocate one below,
+                          then whitelist it in your {broker} developer console.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={handleRequestV4}
+                          disabled={requestingV4}
+                        >
+                          {requestingV4 ? 'Allocating…' : 'Request dedicated IPv4 IP'}
+                        </Button>
+                      </div>
                     )
                   ) : (
                     instructions.client_ipv6 && (
