@@ -25,13 +25,10 @@ import {
   type DistributionInbox,
   type DistributionSignal,
   type InboxCreateResult,
-  type StrategyAdmin,
   createInbox,
   deleteInbox,
   listInboxSignals,
   listInboxes,
-  listStrategyAdmins,
-  pickStrategyAdmin,
   rotateInboxKey,
   updateInbox,
 } from '@/api/distribution'
@@ -404,7 +401,6 @@ function InboxRow({ inbox, onEdit, onRotate, onDelete }: InboxRowProps) {
             </span>
           )}
         </div>
-        <StrategyProviderSection inbox={inbox} />
         <button
           type="button"
           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -417,141 +413,6 @@ function InboxRow({ inbox, onEdit, onRotate, onDelete }: InboxRowProps) {
         {showSignals && <InboxSignals inboxId={inbox.id} />}
       </CardContent>
     </Card>
-  )
-}
-
-/** Per-inbox "Strategy Provider" picker. Lets the customer self-rehome
- *  their subscriber under a specific admin on publisher.alphaquark.in.
- *
- *  Hidden entirely if `inbox.publisher_subscriber_id` is null — that
- *  means the inbox wasn't auto-registered (legacy / manual setup) and
- *  the picker has no publisher-side row to reassign on. The operator
- *  fixes this by running scripts/backfill_publisher_subscribers.py on
- *  the hostingsol side.
- */
-function StrategyProviderSection({ inbox }: { inbox: DistributionInbox }) {
-  const [open, setOpen] = useState(false)
-  const [admins, setAdmins] = useState<StrategyAdmin[] | null>(null)
-  const [adminsLoading, setAdminsLoading] = useState(false)
-  const [adminsError, setAdminsError] = useState<string | null>(null)
-  const [selectedAdminId, setSelectedAdminId] = useState<string>('')
-  const [apiKey, setApiKey] = useState('')
-  const [saving, setSaving] = useState(false)
-
-  if (inbox.publisher_subscriber_id == null) {
-    return null
-  }
-
-  function openDialog() {
-    setOpen(true)
-    setSelectedAdminId('')
-    setApiKey('')
-    if (admins !== null) return
-    setAdminsLoading(true)
-    setAdminsError(null)
-    listStrategyAdmins()
-      .then((rows) => setAdmins(rows))
-      .catch((e) => setAdminsError((e as Error).message || 'failed to load providers'))
-      .finally(() => setAdminsLoading(false))
-  }
-
-  async function handleSave() {
-    if (!selectedAdminId) {
-      showToast.error('Pick a Strategy Provider first')
-      return
-    }
-    if (!apiKey.trim()) {
-      showToast.error('Enter your inbox API key to confirm')
-      return
-    }
-    setSaving(true)
-    try {
-      await pickStrategyAdmin(inbox.id, Number(selectedAdminId), apiKey.trim())
-      showToast.success('Strategy Provider updated')
-      setOpen(false)
-      setApiKey('')
-    } catch (e) {
-      showToast.error((e as Error).message || 'pick failed')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <div className="text-xs text-muted-foreground flex items-center gap-2">
-      <span>Strategy Provider:</span>
-      <Badge variant="outline">Linked (subscriber #{inbox.publisher_subscriber_id})</Badge>
-      <button
-        type="button"
-        className="text-xs underline hover:text-foreground"
-        onClick={openDialog}
-      >
-        Change
-      </button>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Choose your Strategy Provider</DialogTitle>
-            <DialogDescription>
-              Pick the admin on publisher.alphaquark.in whose signals you want
-              this inbox to receive. Confirm with the inbox API key shown when
-              the inbox was first created.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="provider-select">Strategy Provider</Label>
-              {adminsLoading && <div className="text-sm text-muted-foreground">Loading…</div>}
-              {adminsError && <div className="text-sm text-destructive">{adminsError}</div>}
-              {admins !== null && admins.length === 0 && !adminsError && (
-                <div className="text-sm text-muted-foreground">
-                  No active Strategy Providers available right now.
-                </div>
-              )}
-              {admins !== null && admins.length > 0 && (
-                <select
-                  id="provider-select"
-                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                  value={selectedAdminId}
-                  onChange={(e) => setSelectedAdminId(e.target.value)}
-                >
-                  <option value="">— pick one —</option>
-                  {admins.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.display_name || `admin #${a.id}`}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <div>
-              <Label htmlFor="provider-key">Inbox API Key (proof of ownership)</Label>
-              <Input
-                id="provider-key"
-                type="password"
-                placeholder="Paste the plaintext API key for this inbox"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                If you've lost the key, rotate it first (Rotate button on the
-                inbox row) — the new plaintext is shown once after rotation.
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave} disabled={saving || !selectedAdminId || !apiKey.trim()}>
-              {saving ? <Loader2 className="mr-2 h-3 w-3 animate-spin" /> : null}
-              Save
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
   )
 }
 
