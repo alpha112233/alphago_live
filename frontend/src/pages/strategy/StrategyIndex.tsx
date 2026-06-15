@@ -131,16 +131,15 @@ export default function StrategyIndex() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Webhooks</h1>
         <p className="text-muted-foreground">
-          Create a webhook, share its URL + API key, and any advisor or REST client can place orders on
-          your account.
+          Create a webhook, share its URL + API key, and any REST client — your script, a bot, or a
+          platform — can place orders on your account.
         </p>
       </div>
 
-      {/* ── Section 1: Webhooks (the capable REST engine — formerly "advisor
-          inbox"). This is the primary surface: an advisor / publisher / your
-          own script POSTs structured orders (dedup + SL/TP brackets + audit).
-          Embedded from the DistributionInbox page so there's one source of
-          truth. */}
+      {/* ── Section 1: Webhooks (the capable REST engine). Primary surface:
+          any REST client (a script, bot, or platform) POSTs structured orders
+          (dedup + SL/TP brackets + audit). Embedded from the DistributionInbox
+          page so there's one source of truth. */}
       <DistributionInboxPage embedded />
 
       <div className="border-t" />
@@ -154,7 +153,7 @@ export default function StrategyIndex() {
           </h2>
           <p className="text-muted-foreground text-sm">
             For platform alerts that send a keyword (BUY/SELL) — you pre-map each symbol's quantity here.
-            For REST / advisor orders, use a webhook above instead.
+            For REST orders, use a webhook above instead.
           </p>
         </div>
         <div className="flex gap-2">

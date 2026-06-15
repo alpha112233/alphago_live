@@ -1,13 +1,13 @@
 /**
- * DistributionInbox — webhook receivers for external signal publishers.
+ * DistributionInbox — webhook receivers for external REST clients.
  *
- * Each inbox is a one-way pipe: an admin / strategy publisher POSTs
- * {symbol, action, quantity, ...} to the inbox's URL with its API key,
+ * Each webhook is a one-way pipe: any REST client POSTs
+ * {symbol, action, quantity, ...} to the webhook's URL with its API key,
  * and our backend places the order on the chosen broker. The UI here
  * lets the customer:
  *
- *   • Create inboxes (one per publisher / per use case)
- *   • Copy the webhook URL + API key to share with the publisher
+ *   • Create webhooks (one per strategy / per use case)
+ *   • Copy the webhook URL + API key to share with the caller
  *   • Pin a specific broker per inbox (else: follows active broker)
  *   • Optional IP allowlist (defence-in-depth against leaked keys)
  *   • Rotate the API key
@@ -201,14 +201,14 @@ export default function DistributionInboxPage({ embedded = false }: { embedded?:
       </div>
       <Card className="mb-6 border-primary/40 bg-primary/5">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Let an advisor (or any REST client) place orders on your account</CardTitle>
+          <CardTitle className="text-base">Let any REST client place orders on your account</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            Create one webhook per strategy, then share its <strong>URL + API key</strong> with your
-            advisor / publisher (or use it from your own script). They POST trade signals to it over REST
-            and each one is placed on your chosen broker. Retries are de-duplicated by{' '}
-            <code className="text-xs">signal_id</code>, and SL/SL-M legs are supported.
+            Create one webhook per strategy, then share its <strong>URL + API key</strong> with whatever
+            will send the orders — your own script, a bot, or any REST client. It POSTs trade signals to
+            the webhook over REST and each one is placed on your chosen broker. Retries are de-duplicated
+            by <code className="text-xs">signal_id</code>, and SL/SL-M legs are supported.
           </p>
           <p>
             Each webhook is independent — you can size and pause each strategy separately on your side. The
@@ -247,7 +247,7 @@ Content-Type: application/json
       ) : inboxes.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No webhooks yet. Create one, then share its URL + API key so an advisor or REST client can place orders.
+            No webhooks yet. Create one, then share its URL + API key so any REST client can place orders.
           </CardContent>
         </Card>
       ) : (
@@ -309,7 +309,7 @@ Content-Type: application/json
                 <CopyableCode value={keyDialog.api_key_plaintext} />
               </div>
               <p className="text-xs text-muted-foreground">
-                Send both to your publisher. The publisher uses{' '}
+                Send both to whatever will POST orders. The caller uses{' '}
                 <code className="text-xs">Authorization: Bearer &lt;api_key&gt;</code> on every POST.
               </p>
             </div>
