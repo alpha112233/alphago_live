@@ -160,60 +160,17 @@ def get_history_from_db(
         - Response data (dict)
         - HTTP status code (int)
     """
-    try:
-        from datetime import date, datetime
-
-        from database.historify_db import get_ohlcv
-
-        # Convert dates to timestamps (handle both string and date objects)
-        if isinstance(start_date, date):
-            start_dt = datetime.combine(start_date, datetime.min.time())
-        else:
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-
-        if isinstance(end_date, date):
-            end_dt = datetime.combine(end_date, datetime.min.time())
-        else:
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
-
-        # Set end_date to end of day
-        end_dt = end_dt.replace(hour=23, minute=59, second=59)
-
-        start_timestamp = int(start_dt.timestamp())
-        end_timestamp = int(end_dt.timestamp())
-
-        # Get data from DuckDB
-        df = get_ohlcv(
-            symbol=symbol,
-            exchange=exchange,
-            interval=interval,
-            start_timestamp=start_timestamp,
-            end_timestamp=end_timestamp,
-        )
-
-        if df.empty:
-            return (
-                False,
-                {
-                    "status": "error",
-                    "message": f"No data found for {symbol}:{exchange} interval {interval} in local database. Download data first using Historify.",
-                },
-                404,
-            )
-
-        # Ensure 'oi' column exists
-        if "oi" not in df.columns:
-            df["oi"] = 0
-
-        # Reorder columns to match API response format
-        columns = ["timestamp", "open", "high", "low", "close", "volume", "oi"]
-        df = df[columns]
-
-        return True, {"status": "success", "data": df.to_dict(orient="records")}, 200
-
-    except Exception as e:
-        logger.exception(f"Error fetching history from DB: {e}")
-        return False, {"status": "error", "message": str(e)}, 500
+    # The Historify local DuckDB store was removed from this build. The 'db'
+    # history source no longer has a backing database — callers should use the
+    # default broker-API source instead.
+    return (
+        False,
+        {
+            "status": "error",
+            "message": "source='db' (local Historify database) is not available on this instance; use the broker API source.",
+        },
+        404,
+    )
 
 
 def get_history(

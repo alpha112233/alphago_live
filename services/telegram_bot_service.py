@@ -2091,7 +2091,7 @@ class TelegramBotService:
             await update.message.reply_text("❌ Please link your account first using /link")
             return
 
-        from blueprints.python_strategy import RUNNING_STRATEGIES, STRATEGY_CONFIGS
+        RUNNING_STRATEGIES, STRATEGY_CONFIGS = {}, {}  # Python strategies feature removed
 
         # Snapshot the running strategies (id, display name) at the moment of invocation.
         # Using user_data for index→id mapping keeps callback_data within Telegram's 64-byte cap.
@@ -2256,7 +2256,7 @@ class TelegramBotService:
 
             stop_msg = ""
             try:
-                from blueprints.python_strategy import RUNNING_STRATEGIES, stop_strategy_process
+                RUNNING_STRATEGIES = {}; stop_strategy_process = lambda *a, **k: (False, "Python strategies feature removed")  # feature removed
 
                 running_ids = list(RUNNING_STRATEGIES.keys())
                 if not running_ids:
@@ -2361,7 +2361,7 @@ class TelegramBotService:
             sid, name = stoppy_list[idx]
             await query.edit_message_text(f"⏳ Stopping *{name}*...", parse_mode=ParseMode.MARKDOWN)
             try:
-                from blueprints.python_strategy import stop_strategy_process
+                stop_strategy_process = lambda *a, **k: (False, "Python strategies feature removed")  # feature removed
 
                 loop = asyncio.get_event_loop()
                 ok, msg = await loop.run_in_executor(None, stop_strategy_process, sid)
@@ -2385,7 +2385,7 @@ class TelegramBotService:
         if callback_data == "csy_all":
             await query.edit_message_text("⏳ Stopping all running strategies...")
             try:
-                from blueprints.python_strategy import RUNNING_STRATEGIES, stop_strategy_process
+                RUNNING_STRATEGIES = {}; stop_strategy_process = lambda *a, **k: (False, "Python strategies feature removed")  # feature removed
 
                 running_ids = list(RUNNING_STRATEGIES.keys())
                 if not running_ids:

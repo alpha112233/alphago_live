@@ -51,7 +51,6 @@ from blueprints.gc_json import gc_json_bp
 from blueprints.gex import gex_bp  # Import the GEX blueprint
 from blueprints.ivsmile import ivsmile_bp  # Import the IV Smile blueprint
 from blueprints.oiprofile import oiprofile_bp  # Import the OI Profile blueprint
-from blueprints.historify import historify_bp  # Import the historify blueprint
 from blueprints.ivchart import ivchart_bp  # Import the IV chart blueprint
 from blueprints.oitracker import oitracker_bp  # Import the OI tracker blueprint
 from blueprints.straddle_chart import straddle_bp  # Import the straddle chart blueprint
@@ -70,7 +69,6 @@ from blueprints.orders import orders_bp
 from blueprints.platforms import platforms_bp
 from blueprints.playground import playground_bp  # Import the API playground blueprint
 from blueprints.pnltracker import pnltracker_bp  # Import the pnl tracker blueprint
-from blueprints.python_strategy import python_strategy_bp, initialize_with_app_context as init_python_strategy  # Import the python strategy blueprint
 from blueprints.react_app import (  # Import React frontend blueprint
     is_react_frontend_available,
     react_bp,
@@ -96,7 +94,6 @@ from database.apilog_db import init_db as ensure_api_log_tables_exists
 from database.auth_db import init_db as ensure_auth_tables_exists
 from database.chartink_db import init_db as ensure_chartink_tables_exists
 from database.flow_db import init_db as ensure_flow_tables_exists
-from database.historify_db import init_database as ensure_historify_tables_exists
 from database.latency_db import init_latency_db as ensure_latency_tables_exists
 from database.leverage_db import init_db as ensure_leverage_tables_exists
 from database.sandbox_db import init_db as ensure_sandbox_tables_exists
@@ -266,14 +263,12 @@ def create_app():
     app.register_blueprint(master_contract_status_bp)
     app.register_blueprint(websocket_bp)  # Register WebSocket example blueprint
     app.register_blueprint(pnltracker_bp)  # Register PnL tracker blueprint
-    app.register_blueprint(python_strategy_bp)  # Register Python strategy blueprint
     app.register_blueprint(telegram_bp)  # Register Telegram blueprint
     app.register_blueprint(security_bp)  # Register Security blueprint
     app.register_blueprint(sandbox_bp)  # Register Sandbox blueprint
     app.register_blueprint(playground_bp)  # Register API playground blueprint
     app.register_blueprint(logging_bp)  # Register Logging blueprint
     app.register_blueprint(admin_bp)  # Register Admin blueprint
-    app.register_blueprint(historify_bp)  # Register Historify blueprint
     app.register_blueprint(ivchart_bp)  # Register IV chart blueprint
     app.register_blueprint(oitracker_bp)  # Register OI tracker blueprint
     app.register_blueprint(straddle_bp)  # Register straddle chart blueprint
@@ -580,7 +575,6 @@ def setup_environment(app):
                 ("Chart Prefs DB", ensure_chart_prefs_tables_exists),
                 ("Market Calendar DB", ensure_market_calendar_tables_exists),
                 ("Qty Freeze DB", ensure_qty_freeze_tables_exists),
-                ("Historify DB", ensure_historify_tables_exists),
                 ("Flow DB", ensure_flow_tables_exists),
                 ("Leverage DB", ensure_leverage_tables_exists),
                 ("Strategy Portfolio DB", ensure_strategy_portfolio_tables_exists),
@@ -624,26 +618,12 @@ def setup_environment(app):
 
             # Initialize schedulers AFTER database initialization
             try:
-                init_python_strategy()
-                logger.debug("Python strategy scheduler initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize Python strategy scheduler: {e}")
-
-            try:
                 from services.flow_scheduler_service import init_flow_scheduler
 
                 init_flow_scheduler()
                 logger.debug("Flow scheduler initialized")
             except Exception as e:
                 logger.error(f"Failed to initialize Flow scheduler: {e}")
-
-            try:
-                from services.historify_scheduler_service import init_historify_scheduler
-
-                init_historify_scheduler(socketio=socketio)
-                logger.debug("Historify scheduler initialized")
-            except Exception as e:
-                logger.error(f"Failed to initialize Historify scheduler: {e}")
 
             # alphago_live fork: daily 08:00 IST broker auto-login.
             # Mints a fresh access_token for each saved broker before
