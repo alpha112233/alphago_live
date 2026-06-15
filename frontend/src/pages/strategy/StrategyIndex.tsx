@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Strategy } from '@/types/strategy'
+import DistributionInboxPage from '@/pages/DistributionInbox'
 
 export default function StrategyIndex() {
   const navigate = useNavigate()
@@ -125,13 +126,31 @@ export default function StrategyIndex() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
+    <div className="container mx-auto py-6 space-y-8">
+      {/* Page header */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Webhooks</h1>
+        <p className="text-muted-foreground">
+          Follow an advisor's signals, or run your own strategy webhooks — all in one place.
+        </p>
+      </div>
+
+      {/* ── Section 1: Advisor Signals (advisor inboxes) ───────────────────
+          This is what most customers want: connect to an advisor / signal
+          provider. Embedded from the DistributionInbox page so there's a
+          single source of truth. */}
+      <DistributionInboxPage embedded />
+
+      <div className="border-t" />
+
+      {/* ── Section 2: My Strategy Webhooks (DIY automation) ─────────────── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Webhook Strategies</h1>
-          <p className="text-muted-foreground">
-            Manage your trading strategies and webhook integrations
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+            My Strategy Webhooks
+          </h2>
+          <p className="text-muted-foreground text-sm">
+            Trade your own account from TradingView, Amibroker, Python and more.
           </p>
         </div>
         <div className="flex gap-2">

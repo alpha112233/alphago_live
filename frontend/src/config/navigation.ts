@@ -38,7 +38,7 @@ export const navItems: NavItem[] = [
   { href: '/tradebook', label: 'Tradebook', icon: FileText },
   { href: '/positions', label: 'Positions', icon: TrendingUp },
   { href: '/action-center', label: 'Action Center', icon: Bell },
-  { href: '/strategy', label: 'Strategy', icon: Code2 },
+  { href: '/strategy', label: 'Webhooks', icon: Inbox },
   { href: '/logs', label: 'Logs', icon: FileBarChart },
   { href: '/instance', label: 'Your Instance', icon: Server },
   { href: '/audit-log', label: 'Audit Log', icon: FileStack },
@@ -50,7 +50,7 @@ export const bottomNavItems: NavItem[] = [
   { href: '/orderbook', label: 'Orderbook', icon: ClipboardList },
   { href: '/tradebook', label: 'Tradebook', icon: FileText },
   { href: '/positions', label: 'Positions', icon: TrendingUp },
-  { href: '/strategy', label: 'Strategy', icon: Code2 },
+  { href: '/strategy', label: 'Webhooks', icon: Inbox },
 ]
 
 // Paths in bottom nav (for filtering mobile sheet items)
@@ -63,7 +63,6 @@ export const mobileSheetItems = navItems.filter((item) => !bottomNavPaths.includ
 export const profileMenuItems: NavItem[] = [
   { href: '/profile', label: 'Profile', icon: User },
   { href: '/manage-brokers', label: 'Brokers', icon: Briefcase },  // alphago_live fork
-  { href: '/distribution-inbox', label: 'Webhooks', icon: Inbox },  // alphago_live fork
   { href: '/apikey', label: 'API Key', icon: Key },
   { href: '/master-contract', label: 'Master Contract', icon: FileStack },
   { href: '/telegram', label: 'Telegram Bot', icon: MessageSquare },

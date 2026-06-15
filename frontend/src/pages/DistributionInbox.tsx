@@ -89,7 +89,7 @@ function CopyableCode({ value, label }: { value: string; label?: string }) {
 
 // ---- Page -----------------------------------------------------------------
 
-export default function DistributionInboxPage() {
+export default function DistributionInboxPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [inboxes, setInboxes] = useState<DistributionInbox[]>([])
   const [savedBrokers, setSavedBrokers] = useState<SavedBroker[]>([])
   const [loading, setLoading] = useState(true)
@@ -149,46 +149,59 @@ export default function DistributionInboxPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 max-w-5xl px-4">
-      <div className="flex items-center gap-3 mb-6">
-        <Link to="/dashboard">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Dashboard
-          </Button>
-        </Link>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Inbox className="h-6 w-6" />
-          Webhooks
-        </h1>
-        <div className="ml-auto">
-          <Button onClick={() => setCreateOpen(true)}>
+    <div className={embedded ? '' : 'container mx-auto py-8 max-w-5xl px-4'}>
+      {!embedded && (
+        <div className="flex items-center gap-3 mb-6">
+          <Link to="/dashboard">
+            <Button variant="ghost" size="sm">
+              <ArrowLeft className="h-4 w-4 mr-1" />
+              Dashboard
+            </Button>
+          </Link>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Inbox className="h-6 w-6" />
+            Webhooks
+          </h1>
+          <div className="ml-auto">
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus className="h-4 w-4 mr-1" />
+              New Inbox
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* My Automation (DIY) — the OTHER kind of webhook. Hidden when this
+          page is embedded inside the Strategy hub (which already IS the DIY
+          surface), shown only on the standalone /distribution-inbox route. */}
+      {!embedded && (
+        <Card className="mb-6">
+          <CardContent className="flex items-center gap-3 py-4 text-sm">
+            <div className="flex-1">
+              <div className="font-medium text-foreground">My Automation — TradingView / Chartink / your own bot</div>
+              <p className="text-muted-foreground text-xs mt-0.5">
+                Want to trade <strong>your own</strong> account from an external tool? Create a strategy
+                webhook instead — it has per-strategy symbol mapping, trading hours and long/short modes.
+              </p>
+            </div>
+            <Link to="/strategy">
+              <Button variant="outline" size="sm">Manage strategies →</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+          Advisor Signals
+        </h2>
+        {embedded && (
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
             New Inbox
           </Button>
-        </div>
+        )}
       </div>
-
-      {/* My Automation (DIY) — the OTHER kind of webhook, kept clearly
-          separate so customers don't confuse it with advisor inboxes. */}
-      <Card className="mb-6">
-        <CardContent className="flex items-center gap-3 py-4 text-sm">
-          <div className="flex-1">
-            <div className="font-medium text-foreground">My Automation — TradingView / Chartink / your own bot</div>
-            <p className="text-muted-foreground text-xs mt-0.5">
-              Want to trade <strong>your own</strong> account from an external tool? Create a strategy
-              webhook instead — it has per-strategy symbol mapping, trading hours and long/short modes.
-            </p>
-          </div>
-          <Link to="/strategy">
-            <Button variant="outline" size="sm">Manage strategies →</Button>
-          </Link>
-        </CardContent>
-      </Card>
-
-      <h2 className="text-sm font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
-        Advisor Signals
-      </h2>
       <Card className="mb-6 border-primary/40 bg-primary/5">
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Receive an advisor's trades</CardTitle>
