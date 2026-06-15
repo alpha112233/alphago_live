@@ -381,8 +381,9 @@ function InboxRow({ inbox, onEdit, onRotate, onDelete }: InboxRowProps) {
           </div>
           <div className="flex items-center gap-1">
             <Button size="sm" variant="outline" onClick={onEdit}>Edit</Button>
-            <Button size="sm" variant="outline" onClick={onRotate} title="Rotate API key">
-              <RefreshCw className="h-3 w-3" />
+            <Button size="sm" variant="outline" onClick={onRotate} title="Generate a fresh API key and show it (the old key stops working)">
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Reveal API key
             </Button>
             <Button size="sm" variant="ghost" onClick={onDelete} title="Delete">
               <Trash2 className="h-3 w-3 text-destructive" />
@@ -394,7 +395,7 @@ function InboxRow({ inbox, onEdit, onRotate, onDelete }: InboxRowProps) {
         <CopyableCode value={buildWebhookUrl(inbox.inbox_slug)} label="URL:" />
         <div className="text-xs text-muted-foreground">
           API key: <code className="text-xs">…{inbox.api_key_last4}</code>{' '}
-          <span className="text-muted-foreground/60">(rotate to view plaintext)</span>
+          <span className="text-muted-foreground/60">(hidden — click "Reveal API key" to show it)</span>
           {inbox.allowed_ips && (
             <span className="ml-3">
               IP allowlist: <code className="text-xs">{inbox.allowed_ips}</code>
