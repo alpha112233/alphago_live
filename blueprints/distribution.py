@@ -1625,6 +1625,10 @@ def system_create_inbox():
                     "api_key_last4": existing.api_key_last4,
                     "publisher_subscriber_id": existing.publisher_subscriber_id,
                     "api_key": None,    # plaintext NOT available post-create
+                    # Derived from the inbox — recomputable even though the
+                    # plaintext api_key is gone. Lets the provisioner / backfill
+                    # enable HMAC signing on an existing subscriber.
+                    "signing_secret": derive_signing_secret(existing),
                 },
             })
 
@@ -1651,6 +1655,41 @@ def system_create_inbox():
             "api_key_last4": row.api_key_last4,
             "publisher_subscriber_id": None,
             "api_key": plaintext,    # shown ONCE — caller must register with publisher immediately
+            "signing_secret": derive_signing_secret(row),
+        },
+    })
+
+
+@distribution_bp.route("/api/distribution/system/signing-secret", methods=["POST"])
+def system_signing_secret():
+    """Server-to-server: return the HMAC signing secret for a specific inbox
+    slug. Lets the publisher (provisioner-authed) enable HMAC signing on an
+    existing subscriber — it knows the slug from the stored webhook_url. The
+    secret is *derived* from the inbox, so this works for any existing inbox
+    without its plaintext api_key.
+
+    Bearer-authed by PROVISIONER_SHARED_SECRET. Body: {"inbox_slug": "..."}.
+    """
+    import os
+    if not _provisioner_authed():
+        return jsonify({
+            "status": "error",
+            "message": "system endpoint requires PROVISIONER_SHARED_SECRET bearer token",
+        }), 401 if os.getenv("PROVISIONER_SHARED_SECRET") else 503
+
+    body = request.get_json(silent=True) or {}
+    slug = (body.get("inbox_slug") or "").strip()
+    if not slug:
+        return jsonify({"status": "error", "message": "inbox_slug is required"}), 400
+
+    inbox = get_inbox_by_slug(slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox slug"}), 404
+    return jsonify({
+        "status": "success",
+        "data": {
+            "inbox_slug": inbox.inbox_slug,
+            "signing_secret": derive_signing_secret(inbox),
         },
     })
 
@@ -1705,133 +1744,3 @@ def system_inbox_info():
         return jsonify({"status": "success", "data": []})
     return jsonify({"status": "success", "data": list_inboxes(admin_id)})
 
-
-# ===========================================================================
-# Customer-facing picker endpoints (Flask session auth)
-# ===========================================================================
-#
-# The customer's dashboard uses these to fetch the list of strategy authors
-# (admins on publisher.alphaquark.in) and self-pick which one they want
-# their signals dispatched from.
-
-@distribution_bp.route("/api/distribution/admins/list", methods=["GET"])
-def list_strategy_admins():
-    """Proxy to publisher's /api/system/admins/list-public.
-
-    The bearer secret + publisher URL are container-side env vars set at
-    provisioning time:
-      PUBLISHER_BASE_URL          (e.g. https://publisher.alphaquark.in)
-      PUBLISHER_SHARED_SECRET     (the same value as HOSTINGSOL_SHARED_SECRET
-                                    on the publisher side)
-    """
-    import os
-    if _current_user_id() is None:
-        return jsonify({"status": "error", "message": "Not authenticated"}), 401
-
-    publisher_base = (os.getenv("PUBLISHER_BASE_URL") or "").rstrip("/")
-    secret = (os.getenv("PUBLISHER_SHARED_SECRET") or "").strip()
-    if not publisher_base or not secret:
-        # Soft-fail: empty list. Lets the UI render without crashing on
-        # containers that aren't part of the hostingsol fleet.
-        return jsonify({
-            "status": "success",
-            "data": [],
-            "_note": "PUBLISHER_BASE_URL / PUBLISHER_SHARED_SECRET not configured",
-        })
-
-    try:
-        import requests
-        resp = requests.get(
-            f"{publisher_base}/api/system/admins/list-public",
-            headers={"Authorization": f"Bearer {secret}"},
-            timeout=10,
-        )
-        body = resp.json()
-        if resp.status_code != 200 or body.get("status") != "success":
-            logger.warning(f"publisher list-public returned {resp.status_code}: {body}")
-            return jsonify({"status": "error", "message": body.get("message") or "publisher error"}), 502
-        return jsonify({"status": "success", "data": body.get("data") or []})
-    except Exception as e:
-        logger.exception("list_strategy_admins failed")
-        return jsonify({"status": "error", "message": f"publisher unreachable: {e}"}), 502
-
-
-@distribution_bp.route("/api/distribution/inboxes/<int:inbox_id>/pick-admin", methods=["POST"])
-def pick_strategy_admin(inbox_id: int):
-    """Customer picks a Strategy Provider for this inbox. We forward the
-    pick to publisher's /api/system/subscribers/<sub_id>/reassign-by-customer
-    using the inbox's API key as the proof of ownership.
-
-    Body:
-      {
-        "target_admin_id": 17,
-        "api_key": "<the plaintext bearer key the customer kept from inbox
-                     creation — surfaced once at inbox-create time>"
-      }
-    """
-    import os
-    user_id = _current_user_id()
-    if user_id is None:
-        return jsonify({"status": "error", "message": "Not authenticated"}), 401
-
-    body = request.get_json(silent=True) or {}
-    try:
-        target_admin_id = int(body.get("target_admin_id") or 0)
-    except (TypeError, ValueError):
-        return jsonify({"status": "error", "message": "target_admin_id must be int"}), 400
-    if not target_admin_id:
-        return jsonify({"status": "error", "message": "target_admin_id required"}), 400
-
-    api_key = (body.get("api_key") or "").strip()
-    if not api_key:
-        return jsonify({
-            "status": "error",
-            "message": "api_key required — the plaintext bearer key shown when the inbox was created. "
-                       "If you've lost it, rotate the key (Distribution Inbox → Rotate) and try again.",
-        }), 400
-
-    # Verify the customer actually owns this inbox + key.
-    from database.distribution_db import check_api_key
-    from database.distribution_db import db_session as dist_session, DistributionInbox
-    inbox = (dist_session.query(DistributionInbox)
-             .filter_by(id=inbox_id, user_id=user_id).first())
-    if inbox is None:
-        return jsonify({"status": "error", "message": "inbox not found"}), 404
-    if not check_api_key(inbox, api_key):
-        return jsonify({"status": "error", "message": "api_key does not match this inbox"}), 401
-    if inbox.publisher_subscriber_id is None:
-        return jsonify({
-            "status": "error",
-            "message": "this inbox is not registered with the upstream publisher yet — "
-                       "ask the operator to run the backfill script or re-trigger provisioning.",
-        }), 409
-
-    publisher_base = (os.getenv("PUBLISHER_BASE_URL") or "").rstrip("/")
-    if not publisher_base:
-        return jsonify({
-            "status": "error",
-            "message": "PUBLISHER_BASE_URL not configured on this container",
-        }), 503
-
-    try:
-        import requests
-        resp = requests.post(
-            f"{publisher_base}/api/system/subscribers/{inbox.publisher_subscriber_id}/reassign-by-customer",
-            json={"api_key": api_key, "target_admin_id": target_admin_id},
-            timeout=10,
-        )
-        out = resp.json()
-        if resp.status_code != 200 or out.get("status") != "success":
-            logger.warning(f"publisher reassign returned {resp.status_code}: {out}")
-            return jsonify({
-                "status": "error",
-                "message": out.get("message") or "publisher rejected the pick",
-            }), resp.status_code if resp.status_code >= 400 else 502
-        logger.info(
-            f"customer picked admin: inbox_id={inbox_id} publisher_sub_id={inbox.publisher_subscriber_id} "
-            f"target_admin_id={target_admin_id}"
-        )
-        return jsonify({"status": "success", "data": out.get("data")})
-    except Exception as e:
-        logger.exception("pick_strategy_admin failed")
-        return jsonify({"status": "error", "message": f"publisher unreachable: {e}"}), 502
