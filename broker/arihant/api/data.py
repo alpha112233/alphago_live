@@ -32,9 +32,9 @@ a key exists.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta
 
-from broker.arihant.api.order_api import _headers
 from broker.arihant.baseurl import get_url
 from broker.arihant.mapping.transform_data import _instrument_for_exchange
 from database.token_db import get_br_symbol, get_token
@@ -43,10 +43,48 @@ from utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+
+class MarketDataNotConfigured(Exception):
+    """The customer hasn't added an Arihant Market Feed API key yet."""
+
+
+def _market_feed_key() -> str:
+    """Arihant gates market data behind a SEPARATE 'Market Feed API' app
+    (distinct from the Trading API), with its own key + its own static-IP
+    whitelist (My Apps → Add App → 'Market Feed APIs'). We store that key
+    in BROKER_API_SECRET_MARKET (the api_secret_market cred slot) — NOT
+    BROKER_API_KEY_MARKET, which for Arihant holds the trading password
+    used by the TOTP-renewal adapter."""
+    return (os.getenv("BROKER_API_SECRET_MARKET") or "").strip()
+
+
+def _data_headers(auth: str) -> dict:
+    """Headers for the chart/market-data endpoints. The `api-key` MUST be
+    the Market Feed API key (a Trading-only key is rejected AU015)."""
+    return {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "api-key": _market_feed_key(),
+        "source": os.getenv("ARIHANT_SOURCE", "SDK").strip() or "SDK",
+        "Authorization": f"Bearer {auth}" if not auth.lower().startswith("bearer ") else auth,
+    }
+
 _IST = timedelta(hours=5, minutes=30)
 # Resolutions accepted by the chart API (string form, per docs example
 # "1day"). Minute granularity gives a live LTP; "1day" is the fallback.
 _INTRADAY_RES = "1"
+
+
+def _arihant_symbol(symbol: str, exchange: str) -> str:
+    """Arihant tradingsymbol from the master, else derive it: NSE/BSE
+    equity wants the '-EQ' suffix (master may not be downloaded yet)."""
+    br = get_br_symbol(symbol, exchange)
+    if br:
+        return br
+    sym = symbol or ""
+    if (exchange or "").upper() in ("NSE", "BSE") and "-" not in sym and sym:
+        return f"{sym}-EQ"
+    return sym
 
 
 def _now_ist() -> datetime:
@@ -64,7 +102,7 @@ class BrokerData:
 
     # -- internal: pull today's candle series for a symbol -----------------
     def _intraday_candles(self, symbol: str, exchange: str, resolution: str) -> list[list]:
-        br_symbol = get_br_symbol(symbol, exchange) or symbol
+        br_symbol = _arihant_symbol(symbol, exchange)
         body = {
             "symbol": br_symbol,
             "resolution": resolution,
@@ -75,7 +113,7 @@ class BrokerData:
         }
         url = get_url("/wrapper-service/api/chart/v1/intraday-candle-data")
         client = get_httpx_client()
-        resp = client.post(url, headers=_headers(self.auth), content=json.dumps(body), timeout=12)
+        resp = client.post(url, headers=_data_headers(self.auth), content=json.dumps(body), timeout=12)
         try:
             data = resp.json()
         except Exception:
@@ -99,6 +137,13 @@ class BrokerData:
     def get_quotes(self, symbol: str, exchange: str) -> dict:
         """LTP + day OHLCV derived from the chart API. bid/ask/oi = 0 (REST
         has no depth/OI). Raises on failure so quotes_service reports it."""
+        if not _market_feed_key():
+            raise MarketDataNotConfigured(
+                "Arihant market data needs a separate 'Market Feed API' key. "
+                "In Arihant My Apps create an app of type 'Market Feed APIs', "
+                "whitelist your dedicated IP, and add the key under Manage "
+                "Brokers → Arihant → Market Feed API Key."
+            )
         candles = self._intraday_candles(symbol, exchange, _INTRADAY_RES)
         if not candles:
             # Fall back to the daily candle (today) for a close = current price.
@@ -133,7 +178,7 @@ class BrokerData:
         }
 
     def _prev_close(self, symbol: str, exchange: str) -> float:
-        br_symbol = get_br_symbol(symbol, exchange) or symbol
+        br_symbol = _arihant_symbol(symbol, exchange)
         end = _now_ist().replace(hour=0, minute=0, second=0, microsecond=0)
         start = end - timedelta(days=7)
         params = {
@@ -146,7 +191,7 @@ class BrokerData:
             "instrument": _instrument_for_exchange(exchange),
         }
         url = get_url("/wrapper-service/api/chart/v1/historical-candle-data")
-        resp = get_httpx_client().get(url, headers=_headers(self.auth), params=params, timeout=12)
+        resp = get_httpx_client().get(url, headers=_data_headers(self.auth), params=params, timeout=12)
         d = (resp.json().get("data") or {})
         candles = d.get("ohlc") or d.get("candles") or d.get("array") or []
         if isinstance(candles, dict):
@@ -170,7 +215,7 @@ class BrokerData:
         """Historical candles via the chart API. interval e.g. '1m','D'."""
         import pandas as pd
         res = "1day" if interval.upper() in ("D", "1D", "1DAY", "DAY") else interval.rstrip("m") or "1"
-        br_symbol = get_br_symbol(symbol, exchange) or symbol
+        br_symbol = _arihant_symbol(symbol, exchange)
         params = {
             "symbol": br_symbol, "resolution": res,
             "from": f"{start_date}T00:00:00.000", "to": f"{end_date}T23:59:59.000",
@@ -179,7 +224,7 @@ class BrokerData:
             "instrument": _instrument_for_exchange(exchange),
         }
         url = get_url("/wrapper-service/api/chart/v1/historical-candle-data")
-        resp = get_httpx_client().get(url, headers=_headers(self.auth), params=params, timeout=20)
+        resp = get_httpx_client().get(url, headers=_data_headers(self.auth), params=params, timeout=20)
         d = (resp.json().get("data") or {})
         candles = d.get("ohlc") or d.get("candles") or d.get("array") or []
         if isinstance(candles, dict):

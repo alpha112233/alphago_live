@@ -191,6 +191,9 @@ BROKER_FIELDS: dict[str, list[dict]] = {
         {"name": "totp_seed", "label": "Arihant TOTP Seed (optional — for hands-free renewal)",
          "type": "password", "required": False,
          "help": "Base32 TOTP seed from your TradeBridge portal → Setup TOTP. Stored Fernet-encrypted. With this + User ID + Trading Password set, the daily auto-login cron generates the OTP via pyotp at refresh-token re-mint time instead of waiting for SMS, so you never have to redo the OTP page by hand."},
+        {"name": "api_secret_market", "label": "Arihant Market Feed API Key (needed for Sandbox / live quotes)",
+         "type": "password", "required": False,
+         "help": "Arihant gates market data behind a SEPARATE app. In TradeBridge → My Apps → Add App, pick API Type = 'Market Feed APIs', set Primary Static IP to your dedicated IP shown above in 'IP addresses to whitelist', save, then copy that app's API Key here. The Trading API key does NOT work for quotes. Required only if you want Sandbox/Analyze (paper) mode — live order placement needs no quotes."},
     ],
     # ICICI Direct Breeze API — full port (feat/icici-direct-full-port).
     # Customer pastes app_key + secret_key once; daily session_token is
