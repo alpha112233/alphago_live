@@ -319,7 +319,7 @@ def create_app():
             # System endpoints — Bearer PROVISIONER_SHARED_SECRET (hostingsol → here)
             "distribution_bp.system_create_inbox",
             "distribution_bp.system_set_publisher_subscriber_id",
-            "distribution_bp.pick_strategy_admin",
+            "distribution_bp.system_signing_secret",
             # Public webhook — Bearer inbox api_key (publisher → here)
             "distribution_bp.receive_signal_endpoint",
             "distribution_bp.modify_signal_endpoint",
