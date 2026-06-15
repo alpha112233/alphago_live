@@ -11,13 +11,11 @@ export interface AlertCategories {
   actionCenter: boolean // Pending order notifications - Socket: pending_order_created
 
   // User-initiated operations (Tier 1 - High Impact)
-  historify: boolean // Historify job operations, file uploads, schedules (67 toasts)
   strategy: boolean // Strategy management, symbol configuration (39 toasts)
   positions: boolean // Position close/update operations
 
   // User-initiated operations (Tier 2 - Medium Impact)
   chartink: boolean // Chartink strategy operations (26 toasts)
-  pythonStrategy: boolean // Python strategy operations (34 toasts)
   telegram: boolean // Telegram bot operations (19 toasts)
   flow: boolean // Workflow management (15 toasts)
 
@@ -67,12 +65,10 @@ const DEFAULT_STATE = {
     system: true,
     actionCenter: true,
     // Tier 1
-    historify: true,
     strategy: true,
     positions: true,
     // Tier 2
     chartink: true,
-    pythonStrategy: true,
     telegram: true,
     flow: true,
     // Tier 3

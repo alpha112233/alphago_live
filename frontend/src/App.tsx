@@ -32,8 +32,6 @@ const Positions = lazy(() => import('@/pages/Positions'))
 const OrderBook = lazy(() => import('@/pages/OrderBook'))
 const TradeBook = lazy(() => import('@/pages/TradeBook'))
 const Holdings = lazy(() => import('@/pages/Holdings'))
-const Token = lazy(() => import('@/pages/Token'))
-const Search = lazy(() => import('@/pages/Search'))
 const ApiKey = lazy(() => import('@/pages/ApiKey'))
 const Profile = lazy(() => import('@/pages/Profile'))
 const BrokerManager = lazy(() => import('@/pages/BrokerManager'))  // alphago_live fork
@@ -55,8 +53,6 @@ const SandboxPnL = lazy(() => import('@/pages/SandboxPnL'))
 const Analyzer = lazy(() => import('@/pages/Analyzer'))
 const WebSocketTest = lazy(() => import('@/pages/WebSocketTest'))
 const Playground = lazy(() => import('@/pages/Playground'))
-const Historify = lazy(() => import('@/pages/Historify'))
-const HistorifyCharts = lazy(() => import('@/pages/HistorifyCharts'))
 
 // Tools & Option Chain
 const Tools = lazy(() => import('@/pages/Tools'))
@@ -78,14 +74,6 @@ const StrategyIndex = lazy(() => import('@/pages/strategy/StrategyIndex'))
 const NewStrategy = lazy(() => import('@/pages/strategy/NewStrategy'))
 const ViewStrategy = lazy(() => import('@/pages/strategy/ViewStrategy'))
 const ConfigureSymbols = lazy(() => import('@/pages/strategy/ConfigureSymbols'))
-
-// Python Strategy pages
-const PythonStrategyIndex = lazy(() => import('@/pages/python-strategy/PythonStrategyIndex'))
-const NewPythonStrategy = lazy(() => import('@/pages/python-strategy/NewPythonStrategy'))
-const EditPythonStrategy = lazy(() => import('@/pages/python-strategy/EditPythonStrategy'))
-const PythonStrategyLogs = lazy(() => import('@/pages/python-strategy/PythonStrategyLogs'))
-const SchedulePythonStrategy = lazy(() => import('@/pages/python-strategy/SchedulePythonStrategy'))
-const PythonStrategyGuide = lazy(() => import('@/pages/python-strategy/PythonStrategyGuide'))
 
 // Chartink pages
 const ChartinkIndex = lazy(() => import('@/pages/chartink/ChartinkIndex'))
@@ -184,9 +172,6 @@ function App() {
                 <Route path="/orderbook" element={<OrderBook />} />
                 <Route path="/tradebook" element={<TradeBook />} />
                 <Route path="/holdings" element={<HoldingsRoute />} />
-                {/* Search routes - match Flask /search/* routes */}
-                <Route path="/search/token" element={<Token />} />
-                <Route path="/search" element={<Search />} />
                 {/* API Key management */}
                 <Route path="/apikey" element={<ApiKey />} />
                 {/* Phase 4: Charts & Webhook Configuration */}
@@ -229,13 +214,6 @@ function App() {
                 <Route path="/strategy/new" element={<NewStrategy />} />
                 <Route path="/strategy/:strategyId" element={<ViewStrategy />} />
                 <Route path="/strategy/:strategyId/configure" element={<ConfigureSymbols />} />
-                {/* Phase 6: Python Strategies */}
-                <Route path="/python" element={<PythonStrategyIndex />} />
-                <Route path="/python/new" element={<NewPythonStrategy />} />
-                <Route path="/python/:strategyId/edit" element={<EditPythonStrategy />} />
-                <Route path="/python/:strategyId/logs" element={<PythonStrategyLogs />} />
-                <Route path="/python/:strategyId/schedule" element={<SchedulePythonStrategy />} />
-                <Route path="/python/guide" element={<PythonStrategyGuide />} />
                 {/* Phase 6: Chartink Strategies */}
                 <Route path="/chartink" element={<ChartinkIndex />} />
                 <Route path="/chartink/new" element={<NewChartinkStrategy />} />
@@ -277,9 +255,6 @@ function App() {
               {/* Full-width protected routes */}
               <Route element={<FullWidthLayout />}>
                 <Route path="/playground" element={<Playground />} />
-                <Route path="/historify" element={<Historify />} />
-                <Route path="/historify/charts" element={<HistorifyCharts />} />
-                <Route path="/historify/charts/:symbol" element={<HistorifyCharts />} />
                 {/* Flow Editor (full-width for canvas) */}
                 <Route path="/flow/editor/:id" element={<FlowEditor />} />
               </Route>

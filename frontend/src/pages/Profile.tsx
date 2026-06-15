@@ -223,16 +223,6 @@ const ALERT_CATEGORIES_DATA: {
   description: string
 }[] = [
   {
-    key: 'historify',
-    label: 'Historify',
-    description: 'Historical data jobs, file uploads, downloads, and schedules',
-  },
-  {
-    key: 'pythonStrategy',
-    label: 'Python Strategy',
-    description: 'Python strategy uploads, execution, logs, and scheduling',
-  },
-  {
     key: 'flow',
     label: 'Flow Workflows',
     description: 'Visual workflow creation, execution, and management',

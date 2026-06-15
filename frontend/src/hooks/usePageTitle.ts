@@ -14,8 +14,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/orderbook': 'Order Book',
   '/tradebook': 'Trade Book',
   '/holdings': 'Holdings',
-  '/search': 'Search',
-  '/search/token': 'Token Search',
   '/apikey': 'API Key',
   '/platforms': 'Platforms',
   '/tradingview': 'TradingView',
@@ -40,9 +38,6 @@ const PAGE_TITLES: Record<string, string> = {
   '/websocket/test': 'WebSocket Test',
   '/strategy': 'Strategies',
   '/strategy/new': 'New Strategy',
-  '/python': 'Python Strategies',
-  '/python/new': 'New Python Strategy',
-  '/python/guide': 'Python Strategy Guide',
   '/chartink': 'Chartink Strategies',
   '/chartink/new': 'New Chartink Strategy',
   '/flow': 'Flow',
@@ -67,21 +62,15 @@ const PAGE_TITLES: Record<string, string> = {
   '/master-contract': 'Master Contract',
   '/action-center': 'Action Center',
   '/playground': 'Playground',
-  '/historify': 'Historify',
-  '/historify/charts': 'Historify Charts',
 }
 
 /** Dynamic route patterns for parameterized routes */
 const DYNAMIC_TITLES: Array<{ pattern: RegExp; title: string }> = [
   { pattern: /^\/strategy\/[^/]+\/configure$/, title: 'Configure Strategy' },
   { pattern: /^\/strategy\/[^/]+$/, title: 'View Strategy' },
-  { pattern: /^\/python\/[^/]+\/edit$/, title: 'Edit Strategy' },
-  { pattern: /^\/python\/[^/]+\/logs$/, title: 'Strategy Logs' },
-  { pattern: /^\/python\/[^/]+\/schedule$/, title: 'Schedule Strategy' },
   { pattern: /^\/chartink\/[^/]+\/configure$/, title: 'Configure Chartink' },
   { pattern: /^\/chartink\/[^/]+$/, title: 'View Chartink Strategy' },
   { pattern: /^\/flow\/editor\/[^/]+$/, title: 'Flow Editor' },
-  { pattern: /^\/historify\/charts\/[^/]+$/, title: 'Historify Charts' },
   { pattern: /^\/websocket\/test\/\d+$/, title: 'WebSocket Test' },
 ]
 

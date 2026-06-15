@@ -1,4 +1,4 @@
-import { BarChart3, FileText, MessageCircle, Search, Zap } from 'lucide-react'
+import { BarChart3, FileText, MessageCircle, Zap } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useOrderEventRefresh } from '@/hooks/useOrderEventRefresh'
@@ -194,16 +194,6 @@ export default function Dashboard() {
   }
 
   const quickAccessCards = [
-    {
-      href: '/search',
-      label: 'Alpha Live Trading Symbols',
-      description: 'Universal symbology across brokers',
-      icon: Search,
-      gradient: 'from-primary/10 to-primary/5 hover:from-primary/20 hover:to-primary/10',
-      iconBg: 'bg-primary/20',
-      iconColor: 'text-primary',
-      borderColor: 'border-primary/20 hover:border-primary/40',
-    },
     {
       href: '/logs',
       label: 'Live Logs',
