@@ -42,6 +42,7 @@ from database.distribution_db import (
     clear_pending_bracket,
     create_inbox,
     delete_inbox,
+    derive_signing_secret,
     find_signal,
     get_inbox_by_slug,
     list_inboxes,
@@ -51,6 +52,7 @@ from database.distribution_db import (
     set_pending_bracket,
     update_inbox,
     update_signal_status,
+    verify_signed_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -121,6 +123,36 @@ def _extract_bearer_or_apikey_header() -> str:
     if auth.lower().startswith("bearer "):
         return auth[7:].strip()
     return request.headers.get("X-API-Key", "").strip()
+
+
+def _authenticate_inbox_request(inbox) -> tuple[bool, str | None]:
+    """Authenticate an inbound webhook against `inbox`.
+
+    Two accepted modes (the client picks one):
+      • HMAC+timestamp (preferred): send `X-Signature` (+ `X-Timestamp`).
+        The api_key never travels on the wire and replays are bounded to a
+        short window. Used whenever `X-Signature` is present.
+      • Bearer api_key (legacy/back-compat): `Authorization: Bearer <key>`
+        or `X-API-Key: <key>`.
+
+    Returns (ok, error_message).
+    """
+    if request.headers.get("X-Signature", "").strip():
+        # get_data(cache=True) keeps the raw body so a later get_json() still
+        # works; we MUST sign/verify over the exact bytes received.
+        raw_body = request.get_data(cache=True)
+        return verify_signed_request(
+            inbox,
+            request.headers.get("X-Timestamp", "").strip(),
+            request.headers.get("X-Signature", "").strip(),
+            raw_body,
+        )
+    if check_api_key(inbox, _extract_bearer_or_apikey_header()):
+        return True, None
+    return False, (
+        "invalid or missing credentials — send 'Authorization: Bearer <api_key>', "
+        "or sign the request with 'X-Timestamp' + 'X-Signature' (HMAC-SHA256)"
+    )
 
 
 def _resolve_routing_broker(user_id: int, broker_override: str | None) -> tuple[str | None, str | None, str | None]:
@@ -258,6 +290,7 @@ def create_inbox_endpoint():
             "allowed_ips": row.allowed_ips or "",
             "status": row.status,
             "api_key_plaintext": plaintext_key,
+            "signing_secret": derive_signing_secret(row),
             "webhook_url": _build_webhook_url(row.inbox_slug),
         },
     })
@@ -305,6 +338,7 @@ def rotate_api_key_endpoint(inbox_id: int):
             "id": row.id,
             "api_key_last4": row.api_key_last4,
             "api_key_plaintext": plaintext,
+            "signing_secret": derive_signing_secret(row),
         },
     })
 
@@ -622,13 +656,10 @@ def receive_signal_endpoint(inbox_slug: str):
     if inbox.status != "active":
         return jsonify({"status": "error", "message": "inbox disabled"}), 403
 
-    # 2. Validate API key (constant-time).
-    presented_key = _extract_bearer_or_apikey_header()
-    if not check_api_key(inbox, presented_key):
-        return jsonify({
-            "status": "error",
-            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
-        }), 401
+    # 2. Authenticate — HMAC+timestamp signature, or Bearer api_key.
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
 
     # 3. IP allowlist (only if configured).
     if not _ip_is_allowed(src_ip, inbox.allowed_ips):
@@ -913,12 +944,9 @@ def modify_signal_endpoint(inbox_slug: str):
     if inbox.status != "active":
         return jsonify({"status": "error", "message": "inbox disabled"}), 403
 
-    presented_key = _extract_bearer_or_apikey_header()
-    if not check_api_key(inbox, presented_key):
-        return jsonify({
-            "status": "error",
-            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
-        }), 401
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
 
     if not _ip_is_allowed(src_ip, inbox.allowed_ips):
         return jsonify({
@@ -1038,12 +1066,9 @@ def cancel_signal_endpoint(inbox_slug: str):
     if inbox.status != "active":
         return jsonify({"status": "error", "message": "inbox disabled"}), 403
 
-    presented_key = _extract_bearer_or_apikey_header()
-    if not check_api_key(inbox, presented_key):
-        return jsonify({
-            "status": "error",
-            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
-        }), 401
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
 
     if not _ip_is_allowed(src_ip, inbox.allowed_ips):
         return jsonify({
@@ -1247,12 +1272,9 @@ def exit_signal_endpoint(inbox_slug: str):
     if inbox.status != "active":
         return jsonify({"status": "error", "message": "inbox disabled"}), 403
 
-    presented_key = _extract_bearer_or_apikey_header()
-    if not check_api_key(inbox, presented_key):
-        return jsonify({
-            "status": "error",
-            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
-        }), 401
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
 
     if not _ip_is_allowed(src_ip, inbox.allowed_ips):
         return jsonify({
@@ -1467,12 +1489,9 @@ def get_positions_endpoint(inbox_slug: str):
     if inbox.status != "active":
         return jsonify({"status": "error", "message": "inbox disabled"}), 403
 
-    presented_key = _extract_bearer_or_apikey_header()
-    if not check_api_key(inbox, presented_key):
-        return jsonify({
-            "status": "error",
-            "message": "invalid or missing API key (send as 'Authorization: Bearer <key>')",
-        }), 401
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
 
     if not _ip_is_allowed(src_ip, inbox.allowed_ips):
         return jsonify({

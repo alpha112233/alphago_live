@@ -92,7 +92,7 @@ export default function DistributionInboxPage({ embedded = false }: { embedded?:
   const [loading, setLoading] = useState(true)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingInbox, setEditingInbox] = useState<DistributionInbox | null>(null)
-  const [keyDialog, setKeyDialog] = useState<InboxCreateResult | { id: number; api_key_plaintext: string; webhook_url: string; api_key_last4: string; name: string } | null>(null)
+  const [keyDialog, setKeyDialog] = useState<InboxCreateResult | { id: number; api_key_plaintext: string; webhook_url: string; api_key_last4: string; name: string; signing_secret?: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<DistributionInbox | null>(null)
 
   async function refresh() {
@@ -123,6 +123,7 @@ export default function DistributionInboxPage({ embedded = false }: { embedded?:
         id: inbox.id,
         api_key_plaintext: result.api_key_plaintext,
         api_key_last4: result.api_key_last4,
+        signing_secret: result.signing_secret,
         webhook_url: buildWebhookUrl(inbox.inbox_slug),
         name: inbox.name,
       })
@@ -292,10 +293,10 @@ Content-Type: application/json
       <Dialog open={keyDialog !== null} onOpenChange={(o) => !o && setKeyDialog(null)}>
         <DialogContent className="max-w-xl">
           <DialogHeader>
-            <DialogTitle>API key — copy now</DialogTitle>
+            <DialogTitle>Credentials — copy now</DialogTitle>
             <DialogDescription>
-              This is the only time we'll show this plaintext key. After you close this dialog the key is
-              hashed at rest; we can't recover it. If you lose it, rotate to get a new one.
+              This is the only time we'll show these secrets. After you close this dialog they can't be
+              recovered — use <strong>Reveal API key</strong> to roll fresh ones.
             </DialogDescription>
           </DialogHeader>
           {keyDialog && (
@@ -305,13 +306,45 @@ Content-Type: application/json
                 <CopyableCode value={keyDialog.webhook_url} />
               </div>
               <div>
-                <Label className="text-xs">API key</Label>
+                <Label className="text-xs">API key (simple — Bearer auth)</Label>
                 <CopyableCode value={keyDialog.api_key_plaintext} />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Easiest: the caller sends{' '}
+                  <code className="text-xs">Authorization: Bearer &lt;api_key&gt;</code> over HTTPS.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Send both to whatever will POST orders. The caller uses{' '}
-                <code className="text-xs">Authorization: Bearer &lt;api_key&gt;</code> on every POST.
-              </p>
+              {'signing_secret' in keyDialog && keyDialog.signing_secret && (
+                <div>
+                  <Label className="text-xs">Signing secret (stronger — HMAC + timestamp)</Label>
+                  <CopyableCode value={keyDialog.signing_secret} />
+                  <details className="text-xs text-muted-foreground mt-1">
+                    <summary className="cursor-pointer">
+                      Recommended: sign each request so the secret never travels on the wire
+                    </summary>
+                    <div className="mt-2 space-y-1">
+                      <p>
+                        Instead of the Bearer key, send two headers and no key in the body:
+                      </p>
+                      <pre className="bg-background border rounded p-2 overflow-x-auto">
+{`ts  = <current unix time, seconds>
+sig = HMAC_SHA256(signing_secret, ts + "." + <raw JSON body>)  // lowercase hex
+
+POST <webhook_url>
+X-Timestamp: <ts>
+X-Signature: <sig>
+Content-Type: application/json
+
+<raw JSON body>`}
+                      </pre>
+                      <p>
+                        The request is rejected if it arrives more than{' '}
+                        <strong>±30&nbsp;seconds</strong> from <code className="text-xs">ts</code> (replay
+                        protection) or the signature doesn't match. Bearer auth keeps working — pick either.
+                      </p>
+                    </div>
+                  </details>
+                </div>
+              )}
             </div>
           )}
           <DialogFooter>

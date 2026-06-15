@@ -36,10 +36,12 @@ Inbound IP allowlist:
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import secrets
 import string
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -426,6 +428,64 @@ def check_api_key(inbox: DistributionInbox, plaintext: str) -> bool:
     if not plaintext:
         return False
     return _secrets.compare_digest(inbox.api_key_hash, _hash_api_key(plaintext))
+
+
+# ---- HMAC + timestamp request signing -------------------------------------
+#
+# An opt-in alternative to the static Bearer api_key. The client signs each
+# request with a per-inbox *signing secret* and a unix timestamp, so the
+# secret itself NEVER travels on the wire and replays are bounded to a short
+# window. The bearer api_key keeps working unchanged for existing clients.
+#
+# Canonical string the client signs (ASCII):  f"{timestamp}.{raw_request_body}"
+#   signature = HMAC_SHA256(signing_secret, canonical)  -> lowercase hex
+# Request headers:  X-Timestamp: <unix seconds>   X-Signature: <hex>  (a
+# leading "sha256=" on X-Signature is accepted and stripped).
+#
+# The signing secret is DERIVED from the per-instance API_KEY_PEPPER + the
+# inbox id + its api_key_hash, so: (a) the server can always recompute it
+# without storing anything new (no schema change); (b) only a holder of the
+# server-side pepper can forge it; (c) rotating the api_key rotates it too.
+
+SIGNATURE_WINDOW_SECONDS = 30
+
+
+def derive_signing_secret(inbox: DistributionInbox) -> str:
+    """Per-inbox HMAC signing secret. Stable until the api_key is rotated."""
+    pepper = (os.getenv("API_KEY_PEPPER") or "").encode("utf-8")
+    msg = f"sigkey:v1:{inbox.id}:{inbox.api_key_hash}".encode("utf-8")
+    return "alis_" + hmac.new(pepper, msg, hashlib.sha256).hexdigest()
+
+
+def verify_signed_request(
+    inbox: DistributionInbox,
+    timestamp: str,
+    signature: str,
+    raw_body: bytes,
+    window: int = SIGNATURE_WINDOW_SECONDS,
+) -> tuple[bool, Optional[str]]:
+    """Verify an HMAC+timestamp signed request. Returns (ok, error_message)."""
+    if not timestamp or not signature:
+        return False, "missing X-Timestamp or X-Signature"
+    try:
+        ts = int(float(timestamp))
+    except (TypeError, ValueError):
+        return False, "X-Timestamp must be a unix timestamp in seconds"
+    skew = abs(int(time.time()) - ts)
+    if skew > window:
+        return False, (
+            f"timestamp outside the +/-{window}s window "
+            f"(skew {skew}s — check the clock, or this is a replay)"
+        )
+    secret = derive_signing_secret(inbox).encode("utf-8")
+    canonical = str(timestamp).strip().encode("utf-8") + b"." + (raw_body or b"")
+    expected = hmac.new(secret, canonical, hashlib.sha256).hexdigest()
+    provided = signature.strip()
+    if provided.startswith("sha256="):
+        provided = provided[len("sha256="):].strip()
+    if not secrets.compare_digest(expected, provided):
+        return False, "bad signature"
+    return True, None
 
 
 # ---- signal log ------------------------------------------------------------

@@ -27,6 +27,7 @@ export interface StrategyAdmin {
 
 export interface InboxCreateResult extends DistributionInbox {
   api_key_plaintext: string
+  signing_secret?: string
   webhook_url: string
 }
 
@@ -72,10 +73,10 @@ export async function updateInbox(id: number, payload: UpdateInboxPayload): Prom
   if (r.data?.status !== 'success') throw new Error(r.data?.message || 'update failed')
 }
 
-export async function rotateInboxKey(id: number): Promise<{ api_key_plaintext: string; api_key_last4: string }> {
+export async function rotateInboxKey(id: number): Promise<{ api_key_plaintext: string; api_key_last4: string; signing_secret?: string }> {
   const r = await webClient.post(`/api/distribution/inboxes/${id}/rotate`)
   if (r.data?.status !== 'success') throw new Error(r.data?.message || 'rotate failed')
-  return r.data.data as { api_key_plaintext: string; api_key_last4: string }
+  return r.data.data as { api_key_plaintext: string; api_key_last4: string; signing_secret?: string }
 }
 
 export async function deleteInbox(id: number): Promise<void> {
