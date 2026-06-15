@@ -159,7 +159,7 @@ export default function DistributionInboxPage() {
         </Link>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Inbox className="h-6 w-6" />
-          Distribution Inbox
+          Webhooks
         </h1>
         <div className="ml-auto">
           <Button onClick={() => setCreateOpen(true)}>
@@ -169,21 +169,41 @@ export default function DistributionInboxPage() {
         </div>
       </div>
 
+      {/* My Automation (DIY) — the OTHER kind of webhook, kept clearly
+          separate so customers don't confuse it with advisor inboxes. */}
+      <Card className="mb-6">
+        <CardContent className="flex items-center gap-3 py-4 text-sm">
+          <div className="flex-1">
+            <div className="font-medium text-foreground">My Automation — TradingView / Chartink / your own bot</div>
+            <p className="text-muted-foreground text-xs mt-0.5">
+              Want to trade <strong>your own</strong> account from an external tool? Create a strategy
+              webhook instead — it has per-strategy symbol mapping, trading hours and long/short modes.
+            </p>
+          </div>
+          <Link to="/strategy">
+            <Button variant="outline" size="sm">Manage strategies →</Button>
+          </Link>
+        </CardContent>
+      </Card>
+
+      <h2 className="text-sm font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+        Advisor Signals
+      </h2>
       <Card className="mb-6 border-primary/40 bg-primary/5">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">What this is</CardTitle>
+          <CardTitle className="text-base">Receive an advisor's trades</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            An external publisher (a strategy provider, an admin's automation, your own bot) can POST
-            trade signals to an inbox URL. Each signal is validated against the inbox's API key, deduped
-            on <code className="text-xs">signal_id</code>, and placed as an order on your chosen broker.
+            This is how you connect to an <strong>advisor / signal provider</strong>: create one inbox per
+            strategy you follow, then share its <strong>URL + API key</strong> with your advisor. They POST
+            trade signals to it and each one is placed on your chosen broker.
           </p>
           <p>
-            Create one inbox per publisher (or per use case). Share the URL + API key with them. The signal
-            payload <strong>must</strong> include the final <code className="text-xs">quantity</code> in
-            shares/contracts — there's no multiplier on this side. The publisher is responsible for sizing
-            (including lot rounding for F&amp;O).
+            Each inbox is independent — you can size and pause each strategy separately on your side. The
+            API key is shown <strong>once</strong> when you create the inbox (Rotate to get a fresh one).
+            The publisher sends the final <code className="text-xs">quantity</code>; there's no multiplier
+            on this side.
           </p>
           <details className="text-xs">
             <summary className="cursor-pointer">Expected payload shape</summary>
