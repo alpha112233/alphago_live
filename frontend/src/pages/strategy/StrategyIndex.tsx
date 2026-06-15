@@ -131,26 +131,30 @@ export default function StrategyIndex() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Webhooks</h1>
         <p className="text-muted-foreground">
-          Follow an advisor's signals, or run your own strategy webhooks — all in one place.
+          Create a webhook, share its URL + API key, and any advisor or REST client can place orders on
+          your account.
         </p>
       </div>
 
-      {/* ── Section 1: Advisor Signals (advisor inboxes) ───────────────────
-          This is what most customers want: connect to an advisor / signal
-          provider. Embedded from the DistributionInbox page so there's a
-          single source of truth. */}
+      {/* ── Section 1: Webhooks (the capable REST engine — formerly "advisor
+          inbox"). This is the primary surface: an advisor / publisher / your
+          own script POSTs structured orders (dedup + SL/TP brackets + audit).
+          Embedded from the DistributionInbox page so there's one source of
+          truth. */}
       <DistributionInboxPage embedded />
 
       <div className="border-t" />
 
-      {/* ── Section 2: My Strategy Webhooks (DIY automation) ─────────────── */}
+      {/* ── Section 2: TradingView / Chartink no-code alerts (the simpler
+          keyword + pre-mapped-symbol engine). Kept for platform users. ─── */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-            My Strategy Webhooks
+            TradingView &amp; Chartink (no-code alerts)
           </h2>
           <p className="text-muted-foreground text-sm">
-            Trade your own account from TradingView, Amibroker, Python and more.
+            For platform alerts that send a keyword (BUY/SELL) — you pre-map each symbol's quantity here.
+            For REST / advisor orders, use a webhook above instead.
           </p>
         </div>
         <div className="flex gap-2">

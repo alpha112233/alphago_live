@@ -162,7 +162,7 @@ export default function DistributionInboxPage({ embedded = false }: { embedded?:
           <div className="ml-auto">
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="h-4 w-4 mr-1" />
-              New Inbox
+              New Webhook
             </Button>
           </div>
         </div>
@@ -190,30 +190,31 @@ export default function DistributionInboxPage({ embedded = false }: { embedded?:
 
       <div className="flex items-center justify-between mb-2">
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-          Advisor Signals
+          Receive orders via REST
         </h2>
         {embedded && (
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="h-4 w-4 mr-1" />
-            New Inbox
+            New Webhook
           </Button>
         )}
       </div>
       <Card className="mb-6 border-primary/40 bg-primary/5">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Receive an advisor's trades</CardTitle>
+          <CardTitle className="text-base">Let an advisor (or any REST client) place orders on your account</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
           <p>
-            This is how you connect to an <strong>advisor / signal provider</strong>: create one inbox per
-            strategy you follow, then share its <strong>URL + API key</strong> with your advisor. They POST
-            trade signals to it and each one is placed on your chosen broker.
+            Create one webhook per strategy, then share its <strong>URL + API key</strong> with your
+            advisor / publisher (or use it from your own script). They POST trade signals to it over REST
+            and each one is placed on your chosen broker. Retries are de-duplicated by{' '}
+            <code className="text-xs">signal_id</code>, and SL/SL-M legs are supported.
           </p>
           <p>
-            Each inbox is independent — you can size and pause each strategy separately on your side. The
-            API key is shown <strong>once</strong> when you create the inbox (Rotate to get a fresh one).
-            The publisher sends the final <code className="text-xs">quantity</code>; there's no multiplier
-            on this side.
+            Each webhook is independent — you can size and pause each strategy separately on your side. The
+            API key is shown <strong>once</strong> when you create the webhook (use{' '}
+            <strong>Reveal API key</strong> to get a fresh one). The sender provides the final{' '}
+            <code className="text-xs">quantity</code>; there's no multiplier on this side.
           </p>
           <details className="text-xs">
             <summary className="cursor-pointer">Expected payload shape</summary>
@@ -246,7 +247,7 @@ Content-Type: application/json
       ) : inboxes.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
-            No inboxes yet. Create one to start receiving signals from a publisher.
+            No webhooks yet. Create one, then share its URL + API key so an advisor or REST client can place orders.
           </CardContent>
         </Card>
       ) : (
@@ -323,10 +324,10 @@ Content-Type: application/json
       <AlertDialog open={confirmDelete !== null} onOpenChange={(o) => !o && setConfirmDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete inbox?</AlertDialogTitle>
+            <AlertDialogTitle>Delete webhook?</AlertDialogTitle>
             <AlertDialogDescription>
-              "{confirmDelete?.name}" will be removed permanently, along with its signal log. The publisher
-              POSTing to this inbox will start getting 404. Cannot be undone.
+              "{confirmDelete?.name}" will be removed permanently, along with its signal log. Anything
+              POSTing to this webhook will start getting 404. Cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -503,10 +504,10 @@ function CreateInboxSheet({ open, onClose, savedBrokers, onCreated }: CreateInbo
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>New Distribution Inbox</SheetTitle>
+          <SheetTitle>New Webhook</SheetTitle>
           <SheetDescription>
-            Each inbox is a separate webhook URL + API key. Use different inboxes for different publishers
-            so you can revoke independently and see per-publisher signal logs.
+            Each webhook is a separate URL + API key. Use a different webhook per strategy / sender so you
+            can revoke independently and see per-sender signal logs.
           </SheetDescription>
         </SheetHeader>
         <div className="space-y-4 mt-6">
@@ -529,7 +530,7 @@ function CreateInboxSheet({ open, onClose, savedBrokers, onCreated }: CreateInbo
               ))}
             </select>
             <p className="text-xs text-muted-foreground mt-1">
-              Pin signals from this inbox to a specific broker. Leave blank to follow your active broker.
+              Pin signals from this webhook to a specific broker. Leave blank to follow your active broker.
             </p>
           </div>
           <div>
@@ -592,7 +593,7 @@ function EditInboxSheet({ inbox, savedBrokers, onClose, onSaved }: EditInboxShee
         allowed_ips: allowedIps.trim() || null,
         status,
       })
-      showToast.success('Inbox updated')
+      showToast.success('Webhook updated')
       onSaved()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -609,7 +610,7 @@ function EditInboxSheet({ inbox, savedBrokers, onClose, onSaved }: EditInboxShee
     <Sheet open={inbox !== null} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="overflow-y-auto sm:max-w-md">
         <SheetHeader>
-          <SheetTitle>Edit Inbox</SheetTitle>
+          <SheetTitle>Edit Webhook</SheetTitle>
           <SheetDescription>
             Change routing, name, IP allowlist, or pause this inbox. The API key + URL stay the same; rotate
             the key from the inbox list if you need a fresh one.
