@@ -120,6 +120,13 @@ def get_quotes_with_auth(
 
     broker_module = import_broker_module(broker)
     if broker_module is None:
+        # Order-only brokers (Arihant/HDFC/Motilal) ship no data module. In
+        # Analyze mode, serve a credential-free fallback quote so paper
+        # trading still works (live trading never reaches this — it needs no
+        # quote). See services/market_data_fallback.py.
+        fb = _maybe_sandbox_fallback(symbol, exchange)
+        if fb is not None:
+            return True, {"status": "success", "data": fb}, 200
         return False, {"status": "error", "message": "Broker-specific module not found"}, 404
 
     try:
@@ -138,10 +145,19 @@ def get_quotes_with_auth(
         quotes = data_handler.get_quotes(symbol, exchange)
 
         if quotes is None:
+            fb = _maybe_sandbox_fallback(symbol, exchange)
+            if fb is not None:
+                return True, {"status": "success", "data": fb}, 200
             return False, {"status": "error", "message": "Failed to fetch quotes"}, 500
 
         return True, {"status": "success", "data": quotes}, 200
     except Exception as e:
+        # The broker's data plugin failed (e.g. Arihant without a Market
+        # Feed key → AU015). In Analyze mode, fall back so paper trading
+        # still works rather than dead-ending the customer.
+        fb = _maybe_sandbox_fallback(symbol, exchange)
+        if fb is not None:
+            return True, {"status": "success", "data": fb}, 200
         # Check if this is a permission error
         error_msg = str(e)
         if "permission" in error_msg.lower() or "insufficient" in error_msg.lower():
@@ -152,6 +168,20 @@ def get_quotes_with_auth(
             logger.exception(f"Error in broker_module.get_quotes: {e}")
 
         return False, {"status": "error", "message": str(e)}, 500
+
+
+def _maybe_sandbox_fallback(symbol: str, exchange: str) -> dict | None:
+    """Credential-free quote, but ONLY in Analyze (paper) mode — live
+    trading must never silently use a non-broker price. Returns None
+    outside Analyze mode or when the fallback can't price the symbol."""
+    try:
+        from database.settings_db import get_analyze_mode
+        if not get_analyze_mode():
+            return None
+        from services.market_data_fallback import get_fallback_quote
+        return get_fallback_quote(symbol, exchange)
+    except Exception:
+        return None
 
 
 def get_quotes(
