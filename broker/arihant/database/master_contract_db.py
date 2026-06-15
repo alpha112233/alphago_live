@@ -47,24 +47,34 @@ log = logging.getLogger(__name__)
 # Download
 # ---------------------------------------------------------------------------
 
+# The master endpoint is per-exchange and PARAMETERISED now (2026-06: it
+# requires ?exch=<EXCH>, and the data-returning route is /master — not
+# /master/cache, which only warms the server-side cache and returns no
+# instruments). Response: {"data": {"symbols": [{tradingSymbol, excTkn,
+# exc, instrument, baseSym, ...}]}}.
+_MASTER_EXCHANGES = ("NSE", "BSE", "NFO", "BFO", "MCX", "CDS")
+
+
 def download_master() -> list[dict]:
-    """Fetch the Arihant symbol master. Unauthenticated."""
+    """Fetch the Arihant symbol master across exchanges. Unauthenticated."""
     client = get_httpx_client()
-    try:
-        resp = client.get(get_url("symbol.master"), timeout=60)
-        resp.raise_for_status()
-    except Exception as e:
-        log.error(f"Arihant symbol master download failed: {e}")
-        return []
-    try:
-        body = resp.json()
-    except Exception:
-        log.error("Arihant symbol master: non-JSON response")
-        return []
-    rows = (body.get("data") or {}).get("instruments") or body.get("data") or []
-    if isinstance(rows, list):
-        return rows
-    return []
+    base = get_url("/wrapper-service/api/symbol/v1/master")
+    all_rows: list[dict] = []
+    for exch in _MASTER_EXCHANGES:
+        try:
+            resp = client.get(base, params={"exch": exch}, timeout=90)
+            if resp.status_code != 200:
+                log.warning(f"Arihant master {exch}: http {resp.status_code}")
+                continue
+            body = resp.json()
+        except Exception as e:
+            log.warning(f"Arihant master {exch} download failed: {e}")
+            continue
+        rows = (body.get("data") or {}).get("symbols") or []
+        if isinstance(rows, list):
+            all_rows.extend(rows)
+            log.info(f"Arihant master {exch}: {len(rows)} symbols")
+    return all_rows
 
 
 # ---------------------------------------------------------------------------
@@ -111,17 +121,20 @@ def _strip_eq_suffix(symbol: str) -> str:
 
 
 def _normalise_row(row: dict) -> Optional[dict]:
-    """Arihant master row -> OpenAlgo symtoken row. Returns None to skip."""
-    exchange = (row.get("exchange") or row.get("exchangeSegment") or "").upper()
+    """Arihant master row -> OpenAlgo symtoken row. Returns None to skip.
+
+    Handles the 2026-06 master format (exc / excTkn / tradingSymbol /
+    baseSym) and the older one (exchange / excToken / tradingsymbol)."""
+    exchange = (row.get("exc") or row.get("exchange") or row.get("exchangeSegment") or "").upper()
     instrument = (row.get("instrument") or row.get("instrumentType") or "").upper()
-    raw_tsymbol = (row.get("tradingsymbol") or row.get("tradingSymbol") or "").strip()
-    token = str(row.get("excToken") or row.get("token") or "").strip()
+    raw_tsymbol = (row.get("tradingSymbol") or row.get("tradingsymbol") or "").strip()
+    token = str(row.get("excTkn") or row.get("excToken") or row.get("token") or "").strip()
     if not exchange or not raw_tsymbol or not token:
         return None
 
-    lotsize = _to_int(row.get("lotsize") or row.get("lotSize") or 1)
-    ticksize = _to_float(row.get("ticksize") or row.get("tickSize") or 0.05)
-    name = (row.get("companyName") or row.get("name") or "").strip()
+    lotsize = _to_int(row.get("lotSize") or row.get("lotsize") or 1)
+    ticksize = _to_float(row.get("tickSize") or row.get("ticksize") or 0.05)
+    name = (row.get("baseSym") or row.get("dispSym") or row.get("companyName") or row.get("name") or "").strip()
 
     if exchange in ("NSE", "BSE") and instrument in ("", "STK", "EQ", "EQUITY"):
         # Equity
@@ -140,8 +153,8 @@ def _normalise_row(row: dict) -> Optional[dict]:
         }
 
     # F&O — pack into OpenAlgo's UNDERLYING+DDMMM+STRIKE+CE/PE form.
-    underlying = (row.get("underlying") or row.get("underlyingSymbol")
-                  or row.get("name") or "").upper().strip()
+    underlying = (row.get("baseSym") or row.get("underlying")
+                  or row.get("underlyingSymbol") or row.get("name") or "").upper().strip()
     if not underlying:
         # Fallback: derive from tradingsymbol prefix (heuristic).
         m = re.match(r"^([A-Z]+)", raw_tsymbol.upper())
