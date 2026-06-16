@@ -102,13 +102,16 @@ def _to_int(s) -> int:
 
 
 def _expiry_to_oa_token(raw: str) -> str:
-    """Arihant expiry (DD-Mon-YYYY or YYYY-MM-DD) -> OpenAlgo DDMMM (e.g. 25JAN)."""
+    """Arihant expiry (DD-Mon-YYYY or YYYY-MM-DD) -> OpenAlgo DDMMMYY (e.g.
+    25JAN26). The 2-digit year is REQUIRED — it's part of the canonical
+    OpenAlgo symbol (NIFTY16JUN2623950CE), and omitting it makes every F&O
+    contract unresolvable against the canonical symbol the publisher sends."""
     if not raw:
         return ""
     for fmt in ("%d-%b-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"):
         try:
             dt = datetime.strptime(str(raw), fmt)
-            return f"{dt.day:02d}{_MONTH_TITLE[dt.month]}"
+            return f"{dt.day:02d}{_MONTH_TITLE[dt.month]}{dt.year % 100:02d}"
         except ValueError:
             continue
     return str(raw)
@@ -178,10 +181,13 @@ def _normalise_row(row: dict) -> Optional[dict]:
     else:
         return None  # unknown F&O shape — skip
 
-    # Map exchange to OpenAlgo convention
+    # Map exchange to OpenAlgo convention. Arihant gives the raw segment as the
+    # derivative exchange itself (NFO/BFO/...), NOT the cash exchange — so the
+    # NSE-vs-everything-else test below was sending all NSE F&O to BFO. Treat
+    # NSE/NFO as NFO and BSE/BFO as BFO.
     oa_exch = exchange
     if instrument in ("OPTSTK", "OPTIDX", "FUTSTK", "FUTIDX"):
-        oa_exch = "NFO" if exchange == "NSE" else "BFO"
+        oa_exch = "NFO" if exchange in ("NSE", "NFO") else "BFO"
     elif instrument in ("OPTCUR", "FUTCUR"):
         oa_exch = "CDS"
     elif instrument in ("OPTCOM", "FUTCOM"):
