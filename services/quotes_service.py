@@ -144,10 +144,18 @@ def get_quotes_with_auth(
 
         quotes = data_handler.get_quotes(symbol, exchange)
 
-        if quotes is None:
+        # A broker may answer with a "successful" but priceless quote instead
+        # of raising — e.g. Dhan returns ltp=0 with "Data APIs not subscribed".
+        # In Analyze mode treat that as a miss and fall back to a credential-
+        # free price so paper trading still works (esp. F&O via the central
+        # feed). _maybe_sandbox_fallback is a no-op outside Analyze mode, so
+        # live trading always keeps the real broker quote.
+        if not _quote_has_price(quotes):
             fb = _maybe_sandbox_fallback(symbol, exchange)
             if fb is not None:
                 return True, {"status": "success", "data": fb}, 200
+
+        if quotes is None:
             return False, {"status": "error", "message": "Failed to fetch quotes"}, 500
 
         return True, {"status": "success", "data": quotes}, 200
@@ -168,6 +176,17 @@ def get_quotes_with_auth(
             logger.exception(f"Error in broker_module.get_quotes: {e}")
 
         return False, {"status": "error", "message": str(e)}, 500
+
+
+def _quote_has_price(quote: dict | None) -> bool:
+    """True only when the broker quote carries a usable positive LTP.
+    A zero/None LTP (e.g. Dhan 'Data APIs not subscribed') counts as a miss."""
+    if not quote:
+        return False
+    try:
+        return float(quote.get("ltp") or 0) > 0
+    except (TypeError, ValueError):
+        return False
 
 
 def _maybe_sandbox_fallback(symbol: str, exchange: str) -> dict | None:
