@@ -2,6 +2,43 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **This is the AlphaQuark fork** (`alpha112233/alphago_live`), the per-customer
+> trading container for the hostingsol product. The generic OpenAlgo guidance
+> below still applies, but the AlphaQuark-specific BLOCKING rules come first.
+> Fast-lookup index: `docs/CLAUDE_NAV.md` (gitignored).
+
+## 🔴🔴 BLOCKING: LIVE trading must NEVER use a non-broker price
+
+> Analyze (paper) mode may price fills from a credential-free fallback
+> (`services/market_data_fallback.py` — Yahoo for equity, publisher central
+> feed `/api/service/ltp` then Black-Scholes for F&O). **LIVE trading must
+> always use the real broker quote.** The gate is
+> `services/quotes_service.py::_maybe_sandbox_fallback`, which returns None
+> unless `get_analyze_mode()` is true. Do NOT call `get_fallback_quote`
+> anywhere outside that gate, and do NOT weaken the analyze-mode check.
+>
+> **Priceless-quote rule (fix 887ae46, 2026-06-17):** a broker can return a
+> "successful" quote with `ltp=0` (e.g. Dhan "Data APIs not subscribed")
+> instead of raising. In Analyze mode any quote with no positive LTP
+> (`_quote_has_price`) MUST fall through to the fallback — otherwise sandbox
+> MARKET orders die with "unable to fetch current price" (esp. F&O). The order
+> path is `sandbox/order_manager.py` → `sandbox/execution_engine.py::_fetch_quote`
+> → `quotes_service.get_quotes`, so the fallback must stay INSIDE the quotes
+> service (after the symbol-master `get_token` validation). Full context:
+> `docs/CLAUDE_NAV.md` "Sandbox (Analyze / paper) pricing".
+>
+> Related: analyze-mode settings cache TTL is **5s** (not 1h) so a stale worker
+> can't route a sandbox-intended order to the LIVE broker after a mode flip.
+
+## 🔴 BLOCKING: keep `docs/CLAUDE_NAV.md` current (gitignored)
+
+> Per the codes-root rule, update `docs/CLAUDE_NAV.md` in the SAME working-tree
+> change as anything that moves/renames/adds a broker plugin, blueprint,
+> service, distribution endpoint, the sandbox pricing path, the Arihant master
+> packing, or the egress/IPv6 wiring. Point to concrete file paths / route URLs
+> / function names. Verify `git check-ignore docs/CLAUDE_NAV.md` first. When you
+> ship a new image, update the "Current `:latest` tag" line there too.
+
 ## Overview
 
 OpenAlgo is a production-ready algorithmic trading platform built with Flask (backend) and React 19 (frontend). It provides a unified API layer across 30+ Indian brokers, enabling seamless integration with TradingView, Amibroker, Excel, Python, and AI agents.
