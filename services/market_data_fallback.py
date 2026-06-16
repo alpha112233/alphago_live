@@ -25,6 +25,7 @@ underlying spot (no broker key, no fragile option-chain scraping).
 from __future__ import annotations
 
 import math
+import os
 from datetime import date, datetime
 
 from utils.httpx_client import get_httpx_client
@@ -129,7 +130,32 @@ def _underlying_spot(underlying: str) -> float | None:
     return float(q["ltp"]) if q else None
 
 
-# ---- F&O (theoretical) -----------------------------------------------------
+# ---- F&O ------------------------------------------------------------------
+
+def _publisher_ltp(symbol: str, exchange: str) -> float | None:
+    """Real last-traded price from the central market-data feed, fetched via
+    the publisher's SERVICE_TOKEN-authed proxy. Returns None if unavailable
+    (no env, unreachable, or the feed has no quote) — caller falls back to a
+    theoretical price."""
+    base = (os.getenv("PUBLISHER_BASE_URL") or os.getenv("PUBLISHER_URL") or "").rstrip("/")
+    token = (os.getenv("SERVICE_TOKEN") or "").strip()
+    if not base or not token:
+        return None
+    try:
+        r = get_httpx_client().post(
+            f"{base}/api/service/ltp",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"symbol": symbol, "exchange": exchange},
+            timeout=6,
+        )
+        if r.status_code == 200:
+            ltp = (r.json().get("data") or {}).get("ltp")
+            return float(ltp) if ltp else None
+        logger.debug(f"publisher ltp {symbol} {exchange}: http {r.status_code}")
+    except Exception as e:
+        logger.debug(f"publisher ltp {symbol} {exchange} failed: {e}")
+    return None
+
 
 def _lookup_contract(symbol: str, exchange: str):
     """(underlying, expiry_raw, strike) from the container's symtoken, or None."""
@@ -179,6 +205,14 @@ def _quote_dict(px: float) -> dict:
 
 def _fno_quote(symbol: str, exchange: str) -> dict | None:
     s = symbol.upper().strip()
+
+    # 1) Prefer the REAL last-traded price from the central feed (options AND
+    #    futures). Black-Scholes below is only a backstop if it's unavailable.
+    real = _publisher_ltp(s, exchange)
+    if real and real > 0:
+        logger.info(f"sandbox fallback {s} {exchange}: real LTP {real} (central feed)")
+        return _quote_dict(real)
+
     contract = _lookup_contract(s, exchange)
     if contract is None:
         logger.debug(f"fno fallback: {s} {exchange} not in symtoken")
