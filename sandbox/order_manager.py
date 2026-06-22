@@ -33,6 +33,17 @@ from utils.symbol_utils import is_future, is_option
 logger = get_logger(__name__)
 
 
+def _as_num(v) -> float:
+    """Numeric value of a modify field that may arrive as a string ("0",
+    "1455.5") or number. Returns 0.0 for None/empty/non-numeric so callers can
+    test `_as_num(x) != 0` instead of relying on truthiness (the string "0" is
+    truthy, which previously broke LIMIT modifies)."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 class OrderManager:
     """Manages sandbox orders for sandbox mode"""
 
@@ -771,7 +782,13 @@ class OrderManager:
             allows_price = order.price_type in ("LIMIT", "SL")
             allows_trigger = order.price_type in ("SL", "SL-M")
 
-            if "price" in new_data and new_data["price"]:
+            # NOTE: compare NUMERICALLY, not by truthiness — these arrive as
+            # strings (the distribution modify always sends price/trigger as
+            # str(value), defaulting unchanged fields to "0"). A non-empty
+            # string "0" is truthy, so a plain `and new_data["price"]` test
+            # wrongly treated an unchanged "0" as "a value was provided" and
+            # rejected LIMIT modifies with "...do not accept a trigger_price".
+            if "price" in new_data and _as_num(new_data["price"]) != 0:
                 if not allows_price:
                     return (
                         False,
@@ -784,7 +801,7 @@ class OrderManager:
                     )
                 order.price = Decimal(str(new_data["price"]))
 
-            if "trigger_price" in new_data and new_data["trigger_price"]:
+            if "trigger_price" in new_data and _as_num(new_data["trigger_price"]) != 0:
                 if not allows_trigger:
                     return (
                         False,
