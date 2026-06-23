@@ -150,15 +150,18 @@ def poll_once() -> dict:
         db_session, DistributionSignal, DistributionInbox,
     )
 
-    today_start = datetime.combine(
-        datetime.now(_IST).date(),
-        datetime.min.time(),
-    )
+    # Poll non-terminal orders from a ~36h rolling window. received_at is stored
+    # UTC-naive, so compare against UTC (the old "today in IST" boundary skewed
+    # against UTC timestamps and could drop a legitimately-recent order). The
+    # 36h span (vs same-day) also catches a terminal transition — e.g. an EOD
+    # square-off cancel — that lands after the poller's daily window, so it gets
+    # synced on the next session instead of sticking in the publisher forever.
+    cutoff = datetime.utcnow() - timedelta(hours=36)
     open_signals = (
         db_session.query(DistributionSignal)
         .filter(DistributionSignal.broker_order_id.isnot(None))
         .filter(DistributionSignal.broker_order_id != "")
-        .filter(DistributionSignal.received_at >= today_start)
+        .filter(DistributionSignal.received_at >= cutoff)
         .filter(
             (DistributionSignal.fill_status.is_(None))
             | (~DistributionSignal.fill_status.in_(list(_TERMINAL_FILL)))
@@ -274,6 +277,38 @@ def _fetch_orderbook_indexed(broker: str, sigs: list) -> dict[str, dict] | None:
     inbox = db_session.query(DistributionInbox).filter_by(id=inbox_id).first()
     if inbox is None:
         return None
+
+    # Analyze (paper) mode: the "broker orderbook" IS the sandbox orderbook.
+    # Route there with the distribution-internal key (no real broker auth — the
+    # paper customer may not even have a live session for `broker`). Without
+    # this the poller hit the live broker, got nothing in analyze mode, and so
+    # NEVER synced terminal states (square-off cancel / rejection / fill) for
+    # paper customers — leaving cancelled orders stuck in the publisher's
+    # Pending fills. Same routing the exit/cancel paths use.
+    try:
+        from database.settings_db import get_analyze_mode
+        analyze_on = bool(get_analyze_mode())
+    except Exception:
+        analyze_on = False
+    if analyze_on:
+        try:
+            from services.orderbook_service import get_orderbook_with_auth
+            success, response_data, _http = get_orderbook_with_auth(
+                auth_token="distribution-internal", broker=broker,
+                original_data={"apikey": "distribution-internal"},
+            )
+        except Exception:
+            logger.exception("fill_poller: sandbox orderbook fetch raised")
+            return None
+        if not success:
+            logger.debug(
+                f"fill_poller: sandbox orderbook fetch failed: "
+                f"{(response_data or {}).get('message')}"
+            )
+            return None
+        data = (response_data or {}).get("data")
+        orders = data if isinstance(data, list) else (data or {}).get("orders") or []
+        return {str(o.get("orderid") or ""): o for o in orders if o.get("orderid")}
 
     # Resolve auth_token for the specific broker the signals were placed
     # against — NOT the customer's currently-active broker (they may have
