@@ -1107,6 +1107,22 @@ def cancel_signal_endpoint(inbox_slug: str):
 
     if not success:
         err_msg = (response_data or {}).get("message", "unknown cancel error")
+        # Idempotent cancel: the order may already be TERMINAL at the broker
+        # (EOD square-off, a prior cancel that didn't sync, a rejection). If so
+        # the desired state is already reached — sync our status to the broker
+        # truth and report success, instead of leaving a phantom 'placed'
+        # signal the publisher keeps showing in "Pending fills" forever.
+        bstatus, _raw = _broker_status_for_order(broker, auth_token, prior.broker_order_id)
+        if bstatus in ("cancelled", "rejected"):
+            update_signal_status(inbox.id, signal_id, "cancelled", error_message=None)
+            clear_pending_bracket(inbox.id, signal_id)
+            return jsonify({
+                "status": "success",
+                "broker": broker,
+                "broker_order_id": prior.broker_order_id,
+                "action_taken": "already_cancelled",
+                "message": f"order already {bstatus} at broker — marked cancelled",
+            }), 200
         update_signal_status(
             inbox.id, signal_id, "placed",
             error_message=f"last cancel failed: {err_msg}",
