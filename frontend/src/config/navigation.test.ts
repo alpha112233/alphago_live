@@ -14,10 +14,10 @@ describe('Navigation Config', () => {
 
       const labels = navItems.map((item) => item.label)
       expect(labels).toContain('Dashboard')
-      expect(labels).toContain('Tools')
+      expect(labels).toContain('Action Center')
       expect(labels).toContain('Orderbook')
       expect(labels).toContain('Positions')
-      expect(labels).toContain('Strategy')
+      expect(labels).toContain('Webhooks')
     })
 
     it('all items have required properties', () => {
@@ -36,9 +36,9 @@ describe('Navigation Config', () => {
       expect(bottomNavItems).toHaveLength(5)
     })
 
-    it('has the correct order: Dashboard, Orderbook, Tradebook, Positions, Strategy', () => {
+    it('has the correct order: Dashboard, Orderbook, Tradebook, Positions, Webhooks', () => {
       const labels = bottomNavItems.map((item) => item.label)
-      expect(labels).toEqual(['Dashboard', 'Orderbook', 'Tradebook', 'Positions', 'Strategy'])
+      expect(labels).toEqual(['Dashboard', 'Orderbook', 'Tradebook', 'Positions', 'Webhooks'])
     })
   })
 
@@ -55,7 +55,7 @@ describe('Navigation Config', () => {
     it('contains remaining nav items', () => {
       const sheetLabels = mobileSheetItems.map((item) => item.label)
       expect(sheetLabels).toContain('Action Center')
-      expect(sheetLabels).toContain('Platforms')
+      expect(sheetLabels).toContain('Your Instance')
       expect(sheetLabels).toContain('Logs')
     })
   })

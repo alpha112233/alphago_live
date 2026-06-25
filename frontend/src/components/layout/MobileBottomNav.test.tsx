@@ -63,11 +63,12 @@ describe('MobileBottomNav', () => {
       expect(positionsLink).toHaveClass('text-primary')
     })
 
-    it('highlights Strategy when on strategy sub-routes', () => {
+    it('highlights Webhooks when on strategy sub-routes', () => {
       renderWithRouter('/strategy/new')
 
-      const strategyLink = screen.getByRole('link', { name: /strategy/i })
-      expect(strategyLink).toHaveClass('text-primary')
+      // The /strategy route is now labelled "Webhooks" in the nav.
+      const webhooksLink = screen.getByRole('link', { name: /webhooks/i })
+      expect(webhooksLink).toHaveClass('text-primary')
     })
 
     it('non-active items have muted color', () => {
