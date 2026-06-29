@@ -118,15 +118,26 @@ def map_portfolio_data(holdings: list[dict]) -> list[dict]:
         sym = h.get("symbol") or {}
         if not isinstance(sym, dict):
             sym = {}
+        # Arihant holdings field names (verified against live response
+        # 2026-06-29): quantity=`qty`/`holdingQty`, pnl=`unRealizedPnl`,
+        # pnl%=`pnlPerc`, avg=`avgPrice`. The earlier guesses (totalQty/netQty,
+        # pnl, pnlPct) didn't exist → qty/pnl read 0 → the publisher dropped
+        # every row (its qty>0 filter), so holdings looked empty.
+        pnl = h.get("unRealizedPnl")
+        if pnl is None:
+            pnl = h.get("pnl")
+        pnlpct = h.get("pnlPerc")
+        if pnlpct is None:
+            pnlpct = h.get("pnlPct")
         out.append({
             "symbol": sym.get("tradingSymbol") or sym.get("symbol") or "",
             "exchange": (sym.get("exc") or "NSE").upper(),
             "isin": h.get("isin"),
-            "quantity": h.get("totalQty") or h.get("netQty") or 0,
+            "quantity": h.get("qty") or h.get("holdingQty") or h.get("totalQty") or h.get("netQty") or 0,
             "average_price": h.get("avgPrice") or h.get("avgCostPrice"),
             "ltp": h.get("ltp"),
-            "pnl": h.get("pnl"),
-            "pnl_percent": h.get("pnlPct"),
+            "pnl": pnl,
+            "pnl_percent": pnlpct,
             "product": "CNC",  # holdings always show as CNC
         })
     return out
