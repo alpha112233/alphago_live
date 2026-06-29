@@ -230,7 +230,17 @@ def place_order_with_auth(
         ))
         return False, error_response, 500
 
-    if _res_http_status(res) == 200:
+    # A broker can return HTTP 200 with an ERROR body. Arihant, for example,
+    # replies 200 + infoMsg:"Order Rejected" + data.rejReason ("Intraday orders
+    # can't be placed after 3:15pm…") for an after-hours intraday order. The
+    # broker plugin's place_order_api flags that by returning
+    # response_data={"status":"error","message":<rejReason>} with order_id=None.
+    # Honor it — a 200 HTTP status must NOT mask a broker rejection, which would
+    # otherwise surface downstream as a misleading "accepted but no order_id".
+    plugin_flagged_error = (
+        isinstance(response_data, dict) and response_data.get("status") == "error"
+    )
+    if _res_http_status(res) == 200 and not plugin_flagged_error:
         order_response_data = {"status": "success", "orderid": order_id}
 
         # Audit: order placement attempt that the broker accepted.
