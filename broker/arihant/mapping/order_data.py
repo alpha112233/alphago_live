@@ -132,5 +132,56 @@ def map_portfolio_data(holdings: list[dict]) -> list[dict]:
     return out
 
 
+def _num(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def calculate_portfolio_statistics(holdings_data: list[dict]) -> dict:
+    """Portfolio totals over the MAPPED Arihant holdings (the output of
+    map_portfolio_data — keys: quantity, average_price, ltp, pnl).
+
+    Required by services/holdings_service.import_broker_module — its absence
+    made the whole Arihant holdings module fail to import ("Broker-specific
+    module not found", 404) for every Arihant customer. (Added 2026-06-29.)
+    """
+    total_current = sum(_num(h.get("ltp")) * _num(h.get("quantity")) for h in holdings_data or [])
+    total_inv = sum(_num(h.get("average_price")) * _num(h.get("quantity")) for h in holdings_data or [])
+    total_pnl = sum(_num(h.get("pnl")) for h in holdings_data or [])
+    total_pnl_pct = (total_pnl / total_inv * 100) if total_inv else 0.0
+    return {
+        "totalholdingvalue": round(total_current, 2),
+        "totalinvvalue": round(total_inv, 2),
+        "totalprofitandloss": round(total_pnl, 2),
+        "totalpnlpercentage": round(total_pnl_pct, 2),
+    }
+
+
 def transform_holdings_data(holdings: list[dict]) -> list[dict]:
-    return map_portfolio_data(holdings)
+    """Project MAPPED Arihant holdings to the OpenAlgo holdings schema.
+
+    holdings_service calls this with the OUTPUT of map_portfolio_data (already
+    normalized), so we must NOT re-run map_portfolio_data here — doing so
+    double-mapped the data (treated the normalized string `symbol` as the raw
+    dict) and blanked every symbol. Just project to the standard keys and
+    rename pnl_percent -> pnlpercent. (Fixed 2026-06-29.)
+    """
+    out = []
+    for h in holdings or []:
+        if not isinstance(h, dict):
+            continue
+        pnlpct = h.get("pnl_percent")
+        if pnlpct is None:
+            pnlpct = h.get("pnlpercent")
+        out.append({
+            "symbol": h.get("symbol", ""),
+            "exchange": h.get("exchange", "NSE"),
+            "quantity": int(_num(h.get("quantity"))),
+            "product": h.get("product", "CNC"),
+            "average_price": round(_num(h.get("average_price")), 2),
+            "pnl": round(_num(h.get("pnl")), 2),
+            "pnlpercent": round(_num(pnlpct), 2),
+        })
+    return out
