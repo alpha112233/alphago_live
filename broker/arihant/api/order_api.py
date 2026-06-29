@@ -121,6 +121,23 @@ def _request(route: str, method: str, auth: str, body: dict | None = None,
             return _request(route, method, new_token, body=body, params=params,
                             with_geo=with_geo, _retry_count=_retry_count + 1)
 
+    # Order-adapter warmup: right after a fresh session (container restart or a
+    # token re-mint) Arihant's order-routing adapter can briefly answer 200 +
+    # infoMsg:"Adapter is Not Ready" before it finishes initializing — the
+    # session/token is valid (reads like holdings work), only the order adapter
+    # isn't up yet. The order was NOT accepted, so a plain retry after a short
+    # delay is safe (no double-place) and transparently rides out the warmup.
+    # Bounded to 2 retries so an overnight adapter-down state (market closed)
+    # fails fast instead of looping. Don't re-mint here — that would just rotate
+    # the refresh_token; the adapter only needs a moment.
+    is_adapter_warming = parsed is not None and "adapter is not ready" in _msg_lower
+    if is_adapter_warming and _retry_count < 2:
+        time.sleep(2.0)
+        log.info(f"Arihant: order adapter warming up ('Adapter is Not Ready') on {method} {url}; "
+                 f"retry {_retry_count + 1}/2 after delay")
+        return _request(route, method, auth, body=body, params=params,
+                        with_geo=with_geo, _retry_count=_retry_count + 1)
+
     if resp.status_code == 401:
         log.error(f"Arihant 401 on {method} {url} — token re-mint also failed")
         return {"infoID": "AUTH_FAILED",
