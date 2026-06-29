@@ -232,7 +232,7 @@ BROKER_FIELDS: dict[str, list[dict]] = {
 
 BROKER_INSTRUCTIONS: dict[str, str] = {
     "zerodha": """\
-### Connect Zerodha (Kite Connect)
+**Connect Zerodha (Kite Connect)**
 
 **Cost:** ₹500/month per app, paid via your Zerodha account. (₹2,000/month also includes a quote/order subscription.)
 
@@ -242,9 +242,7 @@ BROKER_INSTRUCTIONS: dict[str, str] = {
    - **App name:** anything (e.g., `MyAlgo`).
    - **App type:** **"Connect"**.
    - **Redirect URL:** paste this exact value:
-     ```
      {{REDIRECT_URL}}
-     ```
    - **Postback URL:** leave blank.
 4. After payment, the app page shows your **API Key** and **API Secret**.
 5. Paste both into the form here. **Strongly recommended:** also fill in your **Zerodha User ID**, **Trading Password**, and **TOTP Seed** — this enables daily auto-login so you don't have to log in to Kite each morning.
@@ -257,7 +255,7 @@ Without the TOTP seed: you'll click **Connect** each morning at ~06:00 IST when 
 Official docs: https://kite.trade/docs/connect/v3/
 """,
     "upstox": """\
-### Connect Upstox
+**Connect Upstox**
 
 **Cost:** Free.
 
@@ -266,9 +264,7 @@ Official docs: https://kite.trade/docs/connect/v3/
 3. Fill the form:
    - **App name:** anything.
    - **Redirect URI:** paste:
-     ```
      {{REDIRECT_URL}}
-     ```
    - **Static IPs** (separate dialog on the app's detail page): add your dedicated IPv6 shown at the top of this page. This whitelist gates the **order/quote API** (place, modify, cancel orders); the login flow uses a different IP-reputation check on Upstox's edge.
 4. Save the Upstox app. The detail page shows your **API Key** and **API Secret**.
 5. Back here, paste them in the form. Also fill in your **Mobile Number** (10-digit Indian number, NO country code — `7349290444`, not `+917349290444`), **Password**, and **TOTP Seed**.
@@ -283,7 +279,7 @@ Token expiry is daily at **03:30 IST**.
 Official docs: https://upstox.com/developer/api-documentation/open-api
 """,
     "dhan": """\
-### Connect Dhan
+**Connect Dhan**
 
 **Cost:** Free.
 
@@ -309,7 +305,7 @@ Official docs: https://upstox.com/developer/api-documentation/open-api
 Official docs: https://dhanhq.co/docs/v2/authentication/
 """,
     "fyers": """\
-### Connect Fyers
+**Connect Fyers**
 
 **Cost:** Free.
 
@@ -318,9 +314,7 @@ Official docs: https://dhanhq.co/docs/v2/authentication/
 3. Fill the form:
    - **App name:** anything.
    - **Redirect URL:** paste:
-     ```
      {{REDIRECT_URL}}
-     ```
 4. Save. Fyers shows your **App ID** (paste as API Key) and **App Secret**.
 5. Paste both. **Strongly recommended:** also fill in your **Fyers Client ID** (e.g. XK12345), **Trading PIN**, and **TOTP Seed** for daily auto-login.
 6. Save → Make Active.
@@ -332,7 +326,7 @@ Without TOTP seed: daily browser login required via the OAuth `auth_code` flow.
 Official docs: https://myapi.fyers.in/docs/
 """,
     "kotak": """\
-### Connect Kotak Securities (Neo)
+**Connect Kotak Securities (Neo)**
 
 **Cost:** Free.
 
@@ -353,7 +347,7 @@ Official docs: https://myapi.fyers.in/docs/
 Official docs: https://documenter.getpostman.com/view/21534797/UzBnqmpD
 """,
     "iiflcapital": """\
-### Connect IIFL Capital
+**Connect IIFL Capital**
 
 **Cost:** Free.
 
@@ -361,9 +355,7 @@ Official docs: https://documenter.getpostman.com/view/21534797/UzBnqmpD
 2. After approval, IIFL issues an **App Key** and **App Secret**.
 3. In your app settings:
    - **Redirect URL:** paste:
-     ```
      {{REDIRECT_URL}}
-     ```
    - **Whitelisted IPs:** add the IPv6 shown at the top of this page.
 4. Paste both keys → Save → Make Active.
 
@@ -387,7 +379,7 @@ Official docs: https://api.iiflcapital.com/docs
 """,
     "iifl": "REDIRECT_TO_IIFLCAPITAL",  # placeholder — kept for VALID_BROKERS back-compat
     "groww": """\
-### Connect Groww
+**Connect Groww**
 
 **Cost:** ₹499 + tax/month.
 
@@ -408,7 +400,7 @@ Official docs: https://api.iiflcapital.com/docs
 Official docs: https://groww.in/trade-api/docs/curl
 """,
     "aliceblue": """\
-### Connect Alice Blue (Ant)
+**Connect Alice Blue (Ant)**
 
 **Cost:** Free.
 
@@ -426,16 +418,14 @@ Official docs: https://groww.in/trade-api/docs/curl
 Official docs: https://ant.aliceblueonline.com/api (login required)
 """,
     "flattrade": """\
-### Connect Flattrade
+**Connect Flattrade**
 
 **Cost:** Free.
 
 1. Go to **https://authapi.flattrade.in** and create a developer account if you don't have one.
 2. The portal issues a **User ID** (your Flattrade trading user-id) and an **API Key**.
 3. Set the **Redirect URL** in your Flattrade developer app to:
-   ```
    {{REDIRECT_URL}}
-   ```
 4. Enable **TOTP-based 2FA** in Flattrade (Settings → Security → TOTP). Save
    the Base32 secret when the QR code is displayed.
 5. Paste into the form here:
@@ -450,7 +440,7 @@ Official docs: https://ant.aliceblueonline.com/api (login required)
 Official docs: https://flattrade.in/  /  https://api.flattrade.in/docs
 """,
     "indmoney": """\
-### Connect IndMoney
+**Connect IndMoney**
 
 **Cost:** Free.
 
@@ -463,7 +453,7 @@ Official docs: https://flattrade.in/  /  https://api.flattrade.in/docs
 Official docs: link from the IndMoney app's Developer screen (no public docs page yet).
 """,
     "definedge": """\
-### Connect DefinEdge Securities (INTEGRATE)
+**Connect DefinEdge Securities (INTEGRATE)**
 
 **Cost:** Free. Available to any DefinEdge trading account holder.
 
@@ -480,7 +470,7 @@ Official docs: link from the IndMoney app's Developer screen (no public docs pag
 Official docs: https://signup.definedgesecurities.com/trading-api-docs
 """,
     "angel": """\
-### Connect Angel One (SmartAPI)
+**Connect Angel One (SmartAPI)**
 
 **Cost:** Free.
 
@@ -489,9 +479,7 @@ Official docs: https://signup.definedgesecurities.com/trading-api-docs
    - **App Name:** anything (e.g. `MyAlgo`).
    - **App Type:** **"Trading API"**.
    - **Redirect URL:** paste:
-     ```
      {{REDIRECT_URL}}
-     ```
 3. After creation the app page shows your **API Key**. Copy it.
 4. From Angel One mobile app → **Profile → Settings → External 2FA → 2FA Setup**, complete TOTP enrolment if not already done. On the QR screen, tap **"Can't scan? Enter manually"** to reveal the base32 **TOTP Seed**.
 5. Paste into the form here:
@@ -506,7 +494,7 @@ Official docs: https://signup.definedgesecurities.com/trading-api-docs
 Official docs: https://smartapi.angelone.in/docs
 """,
     "icicidirect": """\
-### Connect ICICI Direct (Breeze API)
+**Connect ICICI Direct (Breeze API)**
 
 **Cost:** Free for retail ICICI Direct customers.
 
@@ -514,9 +502,7 @@ Official docs: https://smartapi.angelone.in/docs
 2. **Developer Console → Apps → Create New App**. Fill the form:
    - **App Name:** anything (e.g. `MyAlgo`).
    - **Redirect URL:** paste:
-     ```
      {{REDIRECT_URL}}
-     ```
 3. After saving the app, the page shows **App Key** and **Secret Key** (Breeze calls them "API Key" and "API Secret Key"). Copy both.
 4. (Optional) From the ICICI Direct mobile app → **Profile → Security → Two-Factor Authentication**, enable TOTP and save the base32 seed.
 5. Paste into the form here:
@@ -532,7 +518,7 @@ Official docs: https://smartapi.angelone.in/docs
 Official docs: https://api.icicidirect.com/breezeapi/documents/
 """,
     "fivepaisa": """\
-### Connect 5paisa OpenAPI
+**Connect 5paisa OpenAPI**
 
 **Cost:** Free for 5paisa account holders.
 
@@ -552,7 +538,7 @@ Official docs: https://api.icicidirect.com/breezeapi/documents/
 Official docs: https://www.5paisa.com/developerapi/overview
 """,
     "paytm": """\
-### Connect Paytm Money
+**Connect Paytm Money**
 
 **Cost:** Free for Paytm Money customers.
 
@@ -560,9 +546,7 @@ Official docs: https://www.5paisa.com/developerapi/overview
 2. **Apps → Create App**. Fill the form:
    - **App Name:** anything.
    - **Redirect URL:** paste:
-     ```
      {{REDIRECT_URL}}
-     ```
 3. After saving, the app page shows **API Key** and **API Secret**. Copy both.
 4. Paste into the form here:
    - **API Key:** from step 3.
@@ -575,7 +559,7 @@ Official docs: https://www.5paisa.com/developerapi/overview
 Official docs: https://developer.paytmmoney.com/docs/
 """,
     "arihant": """\
-### Connect Arihant Capital
+**Connect Arihant Capital**
 
 Free for Arihant trading account holders. Four steps. ~3 minutes.
 
@@ -619,6 +603,17 @@ rotates your refresh token. To skip even that manual step:
 - All three are Fernet-encrypted at rest with your per-instance pepper.
   Leave any blank → you keep the default manual-every-6-months behavior.
 
+**6. (Optional) Market data — only for Sandbox / live quotes**
+Arihant gates market data behind a SEPARATE app — the Trading API Key from
+step 1 does NOT return quotes. You only need this if you want Sandbox
+(paper) mode or live price/P&L on holdings; live order placement does not
+need it.
+- At https://tradebridge.arihantplus.com/ → **Apps → + New App**, set
+  **API Type = Market Feed APIs**, and set its **Primary Static IP** to the
+  same dedicated IPv4 you whitelisted in step 2.
+- Copy that app's **API Key** and paste it into the **Arihant Market Feed
+  API Key** field below. Save.
+
 You're connected. From the next day onward the 08:00 IST auto-login
 mints a fresh access token from your refresh token — no further OTP
 needed. If you ever see a "Session Expired" error (Arihant rotates
@@ -631,7 +626,7 @@ Official docs: https://tradebridge.arihantplus.com/docs
 
 # Fallback instructions for brokers that don't have a custom entry yet.
 DEFAULT_INSTRUCTIONS = """\
-### Connect {{BROKER}}
+**Connect {{BROKER}}**
 
 This broker is supported but doesn't have detailed setup instructions in our
 docs yet. General steps:
@@ -639,9 +634,7 @@ docs yet. General steps:
 1. Sign up for the broker's developer / API program.
 2. Create a new API app.
 3. **Redirect URL** — use:
-   ```
    {{REDIRECT_URL}}
-   ```
 4. Copy the API Key and API Secret (and Client Code / TOTP if asked).
 5. Paste below → Save → Make Active.
 
