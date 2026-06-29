@@ -13,6 +13,7 @@ REST endpoints (Flask session auth, the inbox owner manages their own):
 Public webhook (no Flask session — API-key only):
     POST   /distribution/inbox/<inbox_slug>            signal receiver
     GET    /distribution/inbox/<inbox_slug>/positions  current broker positionbook
+    GET    /distribution/inbox/<inbox_slug>/holdings   current broker holdings (demat)
 
 Webhook payload shape (publisher → subscriber):
     {
@@ -1540,6 +1541,86 @@ def get_positions_endpoint(inbox_slug: str):
         "status": "success",
         "broker": broker,
         "data": (response_data or {}).get("data") or [],
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }), 200
+
+
+@distribution_bp.route("/distribution/inbox/<inbox_slug>/holdings", methods=["GET"])
+def get_holdings_endpoint(inbox_slug: str):
+    """Return the current broker holdings (demat portfolio) for the inbox's owner.
+
+    Auth + IP-allowlist + broker-resolve are identical to /positions — the
+    publisher presents `Authorization: Bearer <api_key>` and we route through
+    the same broker the inbox would route orders through. Read-only.
+
+    The publisher's Holdings tab reads this to show what each customer holds,
+    and to let the advisor advise selling a holding. NOTE: a holding-sell is
+    a delivery (CNC) SELL of stock the customer already owns — the publisher
+    deliberately does NOT track it as a squared-off-able position. This
+    endpoint is the read half of that flow.
+
+    Response data shape: {"holdings": [...], "statistics": {...}}, where each
+    holding is {symbol, exchange, quantity, product, average_price, pnl,
+    pnlpercent} (OpenAlgo-normalized across all brokers).
+    """
+    src_ip = _real_source_ip()
+
+    inbox = get_inbox_by_slug(inbox_slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox"}), 404
+    if inbox.status != "active":
+        return jsonify({"status": "error", "message": "inbox disabled"}), 403
+
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
+
+    if not _ip_is_allowed(src_ip, inbox.allowed_ips):
+        return jsonify({
+            "status": "error",
+            "message": f"source IP {src_ip} not in this inbox's allowlist",
+        }), 403
+
+    broker, auth_token, err = _resolve_routing_broker(inbox.user_id, inbox.broker_override)
+    if err is not None:
+        return jsonify({"status": "error", "broker": broker, "message": err}), 503
+
+    # Paper (analyze) customers: route to the sandbox portfolio via the
+    # `distribution-internal` magic apikey (same substitution the fill_poller
+    # and exit/cancel paths use). Live customers hit the real broker.
+    try:
+        from database.settings_db import get_analyze_mode
+        analyze_on = bool(get_analyze_mode())
+    except Exception:
+        analyze_on = False
+
+    try:
+        from services.holdings_service import get_holdings, get_holdings_with_auth
+        if analyze_on:
+            success, response_data, status_code = get_holdings_with_auth(
+                auth_token="distribution-internal", broker=broker,
+                original_data={"apikey": "distribution-internal"},
+            )
+        else:
+            success, response_data, status_code = get_holdings(
+                auth_token=auth_token, broker=broker,
+            )
+    except Exception as e:
+        logger.exception("get_holdings raised")
+        return jsonify({"status": "error", "broker": broker, "message": str(e)}), 500
+
+    if not success:
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "message": (response_data or {}).get("message") or "failed to fetch holdings",
+        }), status_code
+
+    from datetime import datetime, timezone
+    return jsonify({
+        "status": "success",
+        "broker": broker,
+        "data": (response_data or {}).get("data") or {},
         "fetched_at": datetime.now(timezone.utc).isoformat(),
     }), 200
 
