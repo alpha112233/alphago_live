@@ -115,7 +115,7 @@ def _request(route: str, method: str, auth: str, body: dict | None = None,
         or "session expired" in _msg_lower
     )
     if is_session_expired and _retry_count < 1:
-        new_token = _refresh_and_persist_auth_token()
+        new_token = _refresh_and_persist_auth_token(stale_token=auth)
         if new_token:
             log.info(f"Arihant: re-minted access_token after Session-expired on {method} {url}; retrying once")
             return _request(route, method, new_token, body=body, params=params,
@@ -135,34 +135,63 @@ def _request(route: str, method: str, auth: str, body: dict | None = None,
     return parsed
 
 
-def _refresh_and_persist_auth_token() -> str | None:
+# Single-flight re-mint guard. Arihant ROTATES the refresh_token on every
+# re-mint, so a burst of concurrent "Session expired" calls (multiple gunicorn
+# threads/workers hitting the stale access_token at once) would each re-mint
+# and rotate — invalidating each other's refresh_token and causing flaky
+# empties/401s. We coalesce: the first caller mints; everyone else in the burst
+# reuses the freshly-minted token instead of rotating again.
+_remint_lock = threading.Lock()
+_last_remint: dict = {"token": None, "ts": 0.0}
+# Reuse a just-minted token for any re-mint request arriving within this many
+# seconds (covers the concurrency burst at access-token expiry; well under the
+# real access-token lifetime so a genuinely-expired token isn't served long).
+_REMINT_COALESCE_SECONDS = 30.0
+
+
+def _refresh_and_persist_auth_token(stale_token: str | None = None) -> str | None:
     """Re-mint a fresh Arihant access_token (rotates refresh_token via the
     plugin's authenticate_broker) and write it back to OpenAlgo's auth_db
     so subsequent calls hit a non-stale cache. Returns the new token or
-    None on failure."""
-    try:
-        from broker.arihant.api.auth_api import authenticate_broker
-        new_token, err = authenticate_broker(None)
-        if not new_token:
-            log.error(f"Arihant re-mint failed: {err}")
-            return None
-    except Exception as e:
-        log.exception(f"Arihant re-mint raised: {e}")
-        return None
+    None on failure.
 
-    # Persist into auth_db.Auth row so the cached-token paths see the
-    # fresh value. Use whatever username/name exists on the active row;
-    # for single-admin OpenAlgo installs there's only one.
-    try:
-        from database.auth_db import upsert_auth, Auth
-        row = Auth.query.filter_by(broker="arihant", is_revoked=False).first()
-        name = row.name if row else "default"
-        user_id = row.user_id if row else None
-        upsert_auth(name, new_token, "arihant", user_id=user_id)
-        log.info("Arihant: fresh access_token written to auth_db; cache cleared")
-    except Exception as e:
-        log.warning(f"Arihant: auth_db update failed (continuing — current call will still use fresh token): {e}")
-    return new_token
+    Single-flight: serialized by `_remint_lock`. If another thread already
+    minted a fresh token — either very recently, or simply one different from
+    the `stale_token` this caller was using — we return that instead of
+    rotating the refresh_token again."""
+    with _remint_lock:
+        now = time.monotonic()
+        fresh = _last_remint["token"]
+        if fresh and (fresh != stale_token or (now - _last_remint["ts"]) < _REMINT_COALESCE_SECONDS):
+            log.info("Arihant: reusing freshly-minted access_token (single-flight coalesce)")
+            return fresh
+        try:
+            from broker.arihant.api.auth_api import authenticate_broker
+            new_token, err = authenticate_broker(None)
+            if not new_token:
+                log.error(f"Arihant re-mint failed: {err}")
+                return None
+        except Exception as e:
+            log.exception(f"Arihant re-mint raised: {e}")
+            return None
+
+        # Persist into auth_db.Auth row so the cached-token paths see the
+        # fresh value. Use whatever username/name exists on the active row;
+        # for single-admin OpenAlgo installs there's only one. (Inside the lock
+        # so the persist is part of the single-flight, not racing other mints.)
+        try:
+            from database.auth_db import upsert_auth, Auth
+            row = Auth.query.filter_by(broker="arihant", is_revoked=False).first()
+            name = row.name if row else "default"
+            user_id = row.user_id if row else None
+            upsert_auth(name, new_token, "arihant", user_id=user_id)
+            log.info("Arihant: fresh access_token written to auth_db; cache cleared")
+        except Exception as e:
+            log.warning(f"Arihant: auth_db update failed (continuing — current call will still use fresh token): {e}")
+
+        _last_remint["token"] = new_token
+        _last_remint["ts"] = now
+        return new_token
 
 
 def _is_success(resp: dict) -> bool:
