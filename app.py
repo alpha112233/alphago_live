@@ -320,6 +320,7 @@ def create_app():
             "distribution_bp.system_create_inbox",
             "distribution_bp.system_set_publisher_subscriber_id",
             "distribution_bp.system_signing_secret",
+            "distribution_bp.system_rotate_inbox",
             # Public webhook — Bearer inbox api_key (publisher → here)
             "distribution_bp.receive_signal_endpoint",
             "distribution_bp.modify_signal_endpoint",
