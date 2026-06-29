@@ -1841,3 +1841,55 @@ def system_inbox_info():
         return jsonify({"status": "success", "data": []})
     return jsonify({"status": "success", "data": list_inboxes(admin_id)})
 
+
+@distribution_bp.route("/api/distribution/system/rotate-inbox", methods=["POST"])
+def system_rotate_inbox():
+    """Server-to-server: rotate an existing inbox's api_key IN PLACE (same
+    slug) and return the fresh plaintext key + signing secret.
+
+    This is the migration re-sync primitive: when a customer's container is
+    migrated, hostingsol calls this to mint a fresh key, then pushes it to the
+    publisher (POST /api/system/subscribers/<id>/credentials) so the
+    publisher→container link can't silently drift to a 401. Unlike
+    create-inbox force_create, this keeps the SAME slug/webhook_url — only the
+    key changes.
+
+    Bearer-authed by PROVISIONER_SHARED_SECRET. Body: {"inbox_slug": "..."}.
+    """
+    import os
+    if not _provisioner_authed():
+        return jsonify({
+            "status": "error",
+            "message": "system endpoint requires PROVISIONER_SHARED_SECRET bearer token",
+        }), 401 if os.getenv("PROVISIONER_SHARED_SECRET") else 503
+
+    body = request.get_json(silent=True) or {}
+    slug = (body.get("inbox_slug") or "").strip()
+    if not slug:
+        return jsonify({"status": "error", "message": "inbox_slug is required"}), 400
+
+    inbox = get_inbox_by_slug(slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox slug"}), 404
+
+    result = rotate_api_key(inbox.user_id, inbox.id)
+    if result is None:
+        return jsonify({"status": "error", "message": "rotate failed — inbox not found"}), 404
+    row, plaintext = result
+    logger.info(
+        f"system rotate-inbox: inbox_id={row.id} slug={row.inbox_slug} "
+        f"new_last4={row.api_key_last4} (server-to-server)"
+    )
+    return jsonify({
+        "status": "success",
+        "data": {
+            "inbox_id": row.id,
+            "inbox_slug": row.inbox_slug,
+            "api_key_last4": row.api_key_last4,
+            "publisher_subscriber_id": row.publisher_subscriber_id,
+            "api_key": plaintext,           # shown ONCE — caller must push to publisher now
+            "signing_secret": derive_signing_secret(row),
+            "webhook_url": _build_webhook_url(row.inbox_slug),
+        },
+    })
+
