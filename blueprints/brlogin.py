@@ -371,12 +371,9 @@ def broker_callback(broker, para=None):
         from broker.arihant.api.auth_api import login_initiate, verify_otp
 
         api_key = (os.getenv("BROKER_API_KEY") or "").strip()
-        if not api_key:
-            return handle_auth_failure(
-                "BROKER_API_KEY (Arihant App ID / api-key) not configured. "
-                "Save your Arihant credentials in Manage Brokers first.",
-                forward_url="broker.html",
-            )
+        # No early-return when empty: the Step-1 form below lets the operator
+        # type the API Key inline (pre-filled with the stored value when present),
+        # so a missing/wrong stored key is fixable right here.
 
         def _arihant_page(title, body_html):
             return f"""<!DOCTYPE html>
@@ -421,13 +418,22 @@ def broker_callback(broker, para=None):
 </head><body>{body_html}</body></html>"""
 
         if request.method == "GET":
-            return _arihant_page("Step 1 of 2", """
+            import html as _html
+            _ak = _html.escape(api_key)
+            return _arihant_page("Step 1 of 2", f"""
   <h2>Connect Arihant Capital — Step 1 of 2</h2>
   <p class="note">Enter your Arihant trading credentials. An OTP will be sent to
   your registered mobile/email. You only do this once — daily auto-login is
   handled by the refresh token after this.</p>
   <form method="post" action="/arihant/callback">
     <input type="hidden" name="step" value="login">
+    <label>Arihant API Key</label>
+    <input type="text" name="api_key" value="{_ak}" required autocomplete="off"
+           spellcheck="false" autocapitalize="none">
+    <p class="note" style="margin-top:4px; margin-bottom:0">From TradeBridge &rarr;
+    My Apps &rarr; the <b>API Key</b> column (the short key, NOT the App Id UUID).
+    Pre-filled with your saved key &mdash; correct it here if login keeps failing
+    with &ldquo;Invalid API key&rdquo;.</p>
     <label>Arihant User ID</label>
     <input type="text" name="user_id" required autocomplete="username">
     <label>Trading Password</label>
@@ -445,14 +451,36 @@ def broker_callback(broker, para=None):
             if step == "login":
                 user_id_in = (request.form.get("user_id") or "").strip()
                 password = (request.form.get("password") or "").strip()
-                if not user_id_in or not password:
+                # The form now carries the API Key so the operator can correct a
+                # wrong/missing stored key inline (don't make them hunt for
+                # Manage Brokers). Form value wins; fall back to the stored one.
+                form_api_key = (request.form.get("api_key") or "").strip()
+                effective_api_key = form_api_key or api_key
+                if not user_id_in or not password or not effective_api_key:
                     return _arihant_page("Step 1 of 2", """
   <h2>Connect Arihant Capital — Step 1 of 2</h2>
-  <div class="err">User ID and Password are required.</div>
+  <div class="err">API Key, User ID and Password are all required.</div>
   <p><a href="/arihant/callback">Try again</a></p>
 """)
+                # Persist a corrected key so re-mint, env, and future connects use
+                # it (not just this request). Best-effort — never block the login.
+                if form_api_key and form_api_key != api_key:
+                    try:
+                        os.environ["BROKER_API_KEY"] = form_api_key
+                        from database.broker_creds_db import (
+                            BrokerCreds, add_or_update_broker_creds,
+                        )
+                        _row = BrokerCreds.query.filter_by(broker="arihant").first()
+                        if _row is not None:
+                            add_or_update_broker_creds(
+                                user_id=_row.user_id, broker="arihant",
+                                api_key=form_api_key,
+                            )
+                            logger.info("Arihant: api_key corrected via connect form")
+                    except Exception:
+                        logger.exception("Arihant: failed to persist corrected api_key")
                 try:
-                    resp = login_initiate(api_key=api_key, user_id=user_id_in, password=password)
+                    resp = login_initiate(api_key=effective_api_key, user_id=user_id_in, password=password)
                 except Exception as e:
                     logger.exception("Arihant login_initiate exception")
                     return _arihant_page("Error", f'<div class="err">Login failed: {e}</div>')
