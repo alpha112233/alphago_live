@@ -38,6 +38,7 @@ const allBrokers = [
   { id: 'ibulls', name: 'Ibulls', authType: 'totp' },
   { id: 'iifl', name: 'IIFL', authType: 'totp' },
   { id: 'iiflcapital', name: 'IIFL Capital', authType: 'oauth' },
+  { id: 'iiflxts', name: 'IIFL (XTS)', authType: 'totp' },
   { id: 'jainamxts', name: 'JainamXts', authType: 'totp' },
   { id: 'kotak', name: 'Kotak Securities', authType: 'totp' },
   { id: 'mstock', name: 'mStock by Mirae Asset', authType: 'totp' },
@@ -190,6 +191,7 @@ export default function BrokerSelect() {
       case 'groww':
       case 'ibulls':
       case 'iifl':
+      case 'iiflxts':
       case 'kotak':
       case 'rmoney':
       case 'shoonya':

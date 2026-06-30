@@ -90,6 +90,20 @@ BROKER_FIELDS: dict[str, list[dict]] = {
     # The brlogin "iifl" handler still exists for any pre-existing customer
     # records, but new connections route through 'iiflcapital'.
     "iiflcapital": [_TEXT_KEY, _TEXT_SECRET],  # no TOTP seed — see iiflcapital instructions block: daemon login isn't possible, browser OAuth only
+    # IIFL XTS (Symphony) — fully headless: appKey/secretKey for BOTH the
+    # Interactive (trading) and Market Data apps → no browser, no OTP, true
+    # daily auto-login. The 4 fields map to BROKER_API_KEY/SECRET (interactive)
+    # and BROKER_API_KEY_MARKET/SECRET_MARKET (market data) via broker_env_bootstrap.
+    "iiflxts": [
+        {"name": "api_key", "label": "Interactive App Key", "type": "text", "required": True,
+         "help": "From your IIFL XTS Interactive (trading) API app."},
+        {"name": "api_secret", "label": "Interactive Secret Key", "type": "password", "required": True,
+         "help": "Secret key of the IIFL XTS Interactive app."},
+        {"name": "api_key_market", "label": "Market Data App Key", "type": "text", "required": True,
+         "help": "From your IIFL XTS Market Data API app (a SEPARATE app from Interactive — needed for quotes/streaming)."},
+        {"name": "api_secret_market", "label": "Market Data Secret Key", "type": "password", "required": True,
+         "help": "Secret key of the IIFL XTS Market Data app."},
+    ],
     "groww": [_TEXT_KEY,
         {"name": "api_secret", "label": "API Secret (approval mode, optional)",
          "type": "password", "required": False,
@@ -378,6 +392,36 @@ adapter and surface an Auto-login button here.
 Official docs: https://api.iiflcapital.com/docs
 """,
     "iifl": "REDIRECT_TO_IIFLCAPITAL",  # placeholder — kept for VALID_BROKERS back-compat
+    "iiflxts": """\
+**Connect IIFL XTS (auto-login)**
+
+**Cost:** IIFL XTS API is a paid dealer/API subscription — confirm pricing with
+your IIFL relationship manager.
+
+Unlike **IIFL Capital** (browser login every day), **IIFL XTS** (the Symphony
+XTS API on `ttblaze.iifl.com`) logs in **headlessly from your App Key + Secret
+Key** — ✅ **no browser, no OTP, true daily auto-login.**
+
+IIFL XTS issues **two separate API apps** — you need the keys from BOTH:
+
+1. Ask IIFL (or the XTS dealer portal) to enable **XTS API** on your account.
+   You'll get credentials for two apps:
+   - **Interactive API** (placing/managing orders) → an **App Key** + **Secret Key**
+   - **Market Data API** (quotes / streaming) → a **separate App Key** + **Secret Key**
+2. **Whitelisted IP:** if IIFL asks for an IP to whitelist, use the **dedicated
+   IPv4** shown in this broker's panel (IIFL XTS / `ttblaze.iifl.com` is IPv4-only —
+   request a dedicated IPv4 from the button if you don't see one yet).
+3. Enter all four keys above:
+   - Interactive App Key + Interactive Secret Key
+   - Market Data App Key + Market Data Secret Key
+4. Save → Make Active. We log in automatically each day — **no redirect URL and
+   no daily Connect click required.**
+
+ℹ️ If IIFL tells you the API `source` for your account is not the default
+`WebAPI`, let us know — it's a one-line setting.
+
+Official docs: https://ttblaze.iifl.com/doc/interactive/
+""",
     "groww": """\
 **Connect Groww**
 

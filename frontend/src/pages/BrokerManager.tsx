@@ -100,6 +100,7 @@ function brokerLabel(name: string): string {
   // Light-weight prettifier; full label table can come later.
   const overrides: Record<string, string> = {
     fivepaisaxts: '5paisa XTS',
+    iiflxts: 'IIFL XTS',
     icicidirect: 'ICICI Direct',
     indmoney: 'IndMoney',
     dhan_sandbox: 'Dhan (Sandbox)',

@@ -350,6 +350,7 @@ def get_supported_brokers_list() -> tuple[bool, dict[str, Any], int]:
             "zerodha",
             "angel",
             "fivepaisaxts",
+            "iiflxts",
             "aliceblue",
             "dhan",
             "flattrade",

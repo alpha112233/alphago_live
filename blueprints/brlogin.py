@@ -209,6 +209,16 @@ def broker_callback(broker, para=None):
         auth_token, feed_token, user_id, error_message = auth_function(code)
         forward_url = "broker.html"
 
+    elif broker == "iiflxts":
+        # IIFL Securities XTS (Symphony) — headless appKey/secretKey login,
+        # no browser / no OTP. Same response shape as fivepaisaxts.
+        code = "iiflxts"
+        logger.debug(f"IIFL XTS broker - code: {code}")
+
+        # Fetch auth token, feed token and user ID
+        auth_token, feed_token, user_id, error_message = auth_function(code)
+        forward_url = "broker.html"
+
     elif broker == "compositedge":
         # For Compositedge, check if we need to handle a special case where session might be lost
         if "user" not in session:
