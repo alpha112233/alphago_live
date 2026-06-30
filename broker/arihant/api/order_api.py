@@ -352,8 +352,15 @@ def place_order_api(data: dict, auth: str):
         }, None
 
     inner = resp.get("data") or {}
-    rej_reason = inner.get("rejReason")
-    if rej_reason:
+    # Arihant fills `rejReason` with a PLACEHOLDER ("--") for orders that were
+    # NOT rejected (Executed / Open). Treat it as a real rejection ONLY when it
+    # carries a meaningful message — otherwise a successfully-placed order gets
+    # flagged failed (no order_id), the advisor re-sends, and DUPLICATE real
+    # orders go in. (2026-06-30 incident: a "failed" display on adityaneo
+    # produced 3× RELIANCE + 2× PNB executed orders; orderbook showed
+    # status:"Executed", boOrdStatus:"complete", rejReason:"--".)
+    rej_reason = (inner.get("rejReason") or "").strip()
+    if rej_reason and rej_reason.strip("-–— ").strip().lower() not in ("", "na", "n/a", "null", "none"):
         return _make_resp_obj(resp), {
             "status": "error", "message": rej_reason,
         }, None
