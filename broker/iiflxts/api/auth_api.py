@@ -11,6 +11,21 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def _xts_error(detail, status=None):
+    """Pull the human-readable error out of an XTS / Symphony error body.
+    IIFL XTS returns errors as {"type":"error","code":"e-...","description":"..."}
+    — the real reason is in `description` (+ `code`), NOT `message` (which the
+    5paisa template read, so IIFL errors showed as a generic fallback)."""
+    if not isinstance(detail, dict):
+        text = str(detail)[:200]
+        return f"HTTP {status}: {text}" if status else text
+    desc = detail.get("description") or detail.get("message") or detail.get("result")
+    code = detail.get("code")
+    parts = [str(p) for p in (code, desc) if p]
+    msg = " — ".join(parts) if parts else "request rejected"
+    return f"{msg}" + (f" (HTTP {status})" if status else "")
+
+
 def authenticate_broker(request_token):
     try:
         # Get the shared httpx client
@@ -41,18 +56,21 @@ def authenticate_broker(request_token):
                 return token, feed_token, user_id, None
 
             else:
-                # Access token not present in the response
-                return (
-                    None,
-                    None,
-                    None,
-                    "Authentication succeeded but no access token was returned. Please check the response.",
-                )
+                # 200 but type != success — surface the body so the real
+                # reason (e.g. "Data Not found") is visible, not a generic msg.
+                return None, None, None, f"IIFL XTS login failed: {_xts_error(result, 200)}"
         else:
-            # Handling errors from the API
-            error_detail = response.json()
-            error_message = error_detail.get("message", "Authentication failed. Please try again.")
-            return None, None, None, f"API error: {error_message}"
+            # Non-200 — IIFL puts the reason in `description` (+ code).
+            try:
+                error_detail = response.json()
+            except Exception:
+                error_detail = response.text[:300]
+            return None, None, None, (
+                f"IIFL XTS login failed: {_xts_error(error_detail, response.status_code)}. "
+                "If this is 'Data Not found' / an auth/IP error, register the dedicated "
+                "IPv4 shown on this broker's panel with IIFL and confirm these are XTS "
+                "Interactive keys."
+            )
 
     except Exception as e:
         return None, None, None, f"Error during authentication: {str(e)}"
@@ -87,13 +105,13 @@ def get_feed_token():
                 user_id = feed_result["result"].get("userID")
                 logger.info(f"Feed Token: {feed_token}")
             else:
-                return None, None, "Feed token request failed. Please check the response."
+                return None, None, f"Market-data login failed: {_xts_error(feed_result, 200)}"
         else:
-            feed_error_detail = feed_response.json()
-            feed_error_message = feed_error_detail.get(
-                "description", "Feed token request failed. Please try again."
-            )
-            return None, None, f"API Error (Feed): {feed_error_message}"
+            try:
+                feed_error_detail = feed_response.json()
+            except Exception:
+                feed_error_detail = feed_response.text[:300]
+            return None, None, f"Market-data login failed: {_xts_error(feed_error_detail, feed_response.status_code)}"
 
         return feed_token, user_id, None
     except Exception as e:
