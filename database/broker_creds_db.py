@@ -158,19 +158,27 @@ def add_or_update_broker_creds(
         )
         db_session.add(row)
     else:
-        # Don't overwrite a field with None — caller passing None means "leave alone".
+        # Update only fields that carry a value. EMPTY / None both mean "leave
+        # alone" — the credentials form (blueprints/broker_credentials.py) sends
+        # every field as ""-when-blank via .get(...,"").strip(), so treating ""
+        # as "clear" would WIPE the trading api_secret/keys whenever a user
+        # edits one field (e.g. adding only the Market Feed key) and leaves the
+        # others blank. That's exactly how adityaneo's session got destroyed
+        # (2026-06-30): the trading appId + refresh-token were clobbered while
+        # adding the market-feed key. Clearing a field, if ever needed, must be
+        # an explicit action — never a side effect of a blank form input.
         if api_key:
             row.api_key_enc = _encrypt(api_key)
-        if api_secret is not None:
-            row.api_secret_enc = _encrypt(api_secret) if api_secret else None
-        if api_key_market is not None:
-            row.api_key_market_enc = _encrypt(api_key_market) if api_key_market else None
-        if api_secret_market is not None:
-            row.api_secret_market_enc = _encrypt(api_secret_market) if api_secret_market else None
-        if client_code is not None:
-            row.client_code = client_code or None
-        if totp_seed is not None:
-            row.totp_seed_enc = _encrypt(totp_seed) if totp_seed else None
+        if api_secret:
+            row.api_secret_enc = _encrypt(api_secret)
+        if api_key_market:
+            row.api_key_market_enc = _encrypt(api_key_market)
+        if api_secret_market:
+            row.api_secret_market_enc = _encrypt(api_secret_market)
+        if client_code:
+            row.client_code = client_code
+        if totp_seed:
+            row.totp_seed_enc = _encrypt(totp_seed)
         if extra is not None:
             row.extra_json = extra_json
         if notes is not None:
