@@ -395,16 +395,71 @@ def place_smartorder_api(data: dict, auth: str):
     return place_order_api(order, auth)
 
 
-def cancel_order(orderid: str, auth: str):
-    body = {
-        "ordId": orderid,
+def _cancel_body_from_orderbook(orderid: str, auth: str) -> dict:
+    """Arihant's cancel-order endpoint rejects a minimal ``{ordId, remarks}``
+    body with "Invalid request" — it wants the SAME full place-order envelope
+    (symbol/exc/excToken/instrument/lotSize/ordAction/ordType/ordValidity/
+    prdType/qty/disQty/limitPrice/triggerPrice/amo) the order was placed with,
+    plus ``ordId``. We don't have that context in (orderid, auth), so we read
+    it back from the order book and reconstruct it. Verified live 2026-07-01:
+    the minimal body fails, this full body cancels (incl. AMO orders).
+
+    Returns the reconstructed body, or the minimal fallback if the order
+    isn't visible in the book."""
+    minimal = {"ordId": str(orderid), "remarks": "openalgo-cancel"}
+    try:
+        row = next(
+            (o for o in get_order_book(auth)
+             if isinstance(o, dict) and str(o.get("ordId")) == str(orderid)),
+            None,
+        )
+    except Exception:
+        log.exception("cancel_order: order-book lookup failed; using minimal body")
+        return minimal
+    if not row:
+        return minimal
+    sym = row.get("symbol") or {}
+    if not isinstance(sym, dict):
+        sym = {}
+    base = sym.get("baseSym") or sym.get("dispSym") or ""
+    series = sym.get("series") or "EQ"
+    tsym = f"{base}-{series}" if (base and series) else (base or "")
+    return {
+        "symbol": tsym,
+        "exc": sym.get("exc"),
+        "excToken": str(sym.get("excTkn") or ""),
+        "instrument": sym.get("instrument") or "STK",
+        "lotSize": int(sym.get("lotSize") or 1),
+        "ordAction": row.get("ordAction"),
+        "ordType": row.get("ordType"),
+        "ordValidity": row.get("ordValidity"),
+        "prdType": row.get("prdType"),
+        "qty": int(row.get("qty") or 0),
+        "disQty": int(row.get("disQty") or 0),
+        "limitPrice": float(row.get("price") or 0.0),
+        "triggerPrice": float(row.get("triggerPrice") or 0.0),
+        "amo": bool(row.get("amo")),
+        "ordId": str(orderid),
         "remarks": "openalgo-cancel",
     }
+
+
+def cancel_order(orderid: str, auth: str):
+    body = _cancel_body_from_orderbook(orderid, auth)
     resp = _request("order.cancel", "POST", auth, body=body, with_geo=True)
-    if not _is_success(resp):
+    # Arihant returns HTTP 200 + infoID="" on a FAILED cancel, carrying the
+    # error only in infoMsg (e.g. "Invalid request"). _is_success keys off
+    # infoID, so it would falsely pass — guard on the message too, else a
+    # failed cancel reports success and the order silently stays live.
+    info_msg = (resp.get("infoMsg") or "").strip()
+    msg_is_error = any(
+        t in info_msg.lower()
+        for t in ("invalid request", "fail", "error", "expired", "not allowed", "not permitted")
+    )
+    if not _is_success(resp) or msg_is_error:
         return _make_resp_obj(resp), {
             "status": "error",
-            "message": resp.get("infoMsg", "Arihant cancel failed"),
+            "message": info_msg or "Arihant cancel failed",
         }, None
     _invalidate_position_cache(auth)
     return _make_resp_obj(resp), {
