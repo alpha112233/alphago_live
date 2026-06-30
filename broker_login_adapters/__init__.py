@@ -32,6 +32,7 @@ from .dhan import login as dhan_login
 from .flattrade import login as flattrade_login
 from .fyers import login as fyers_login
 from .groww import login as groww_login
+from .iiflxts import login as iiflxts_login
 from .indmoney import login as indmoney_login
 from .kotak import login as kotak_login
 from .upstox import login as upstox_login, precheck as upstox_precheck
@@ -47,6 +48,10 @@ ADAPTERS = {
     "groww": groww_login,
     "flattrade": flattrade_login,
     "indmoney": indmoney_login,
+    # iiflxts: headless XTS (appKey/secretKey -> session token, no browser/OTP).
+    # No TOTP seed — exempted from the scheduler's has_totp_seed gate so it
+    # auto-logs-in daily like indmoney.
+    "iiflxts": iiflxts_login,
     # arihant: refuses with a clear message if any of the 3 hands-free
     # fields aren't set, so it's safe to register in the live registry.
     # The refresh-token chain (cheaper) is tried first by the scheduler;

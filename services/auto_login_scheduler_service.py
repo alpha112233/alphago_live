@@ -51,6 +51,11 @@ logger = logging.getLogger(__name__)
 _IST = pytz.timezone("Asia/Kolkata")
 _scheduler: Optional[BackgroundScheduler] = None
 
+# Headless brokers whose auto-login adapter authenticates from API keys alone
+# (no TOTP seed): indmoney = static access token; iiflxts = XTS appKey/secretKey
+# -> daily session token. These are exempt from the has_totp_seed gate below.
+_NO_TOTP_AUTO_LOGIN = {"indmoney", "iiflxts"}
+
 
 def _is_enabled() -> bool:
     return (os.getenv("AUTO_LOGIN_ENABLED") or "true").strip().lower() in ("1", "true", "yes", "on")
@@ -91,7 +96,7 @@ def run_daily_auto_logins() -> dict:
                 if broker not in ADAPTERS:
                     summary["skipped"] += 1
                     continue
-                if broker != "indmoney" and not entry.get("has_totp_seed"):
+                if broker not in _NO_TOTP_AUTO_LOGIN and not entry.get("has_totp_seed"):
                     summary["skipped"] += 1
                     continue
 
