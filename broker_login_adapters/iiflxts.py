@@ -41,17 +41,18 @@ def login(creds: dict) -> dict:
             "Manage Brokers (the Interactive app, not Market Data)."
         )
 
-    from broker.iiflxts.baseurl import INTERACTIVE_URL, MARKET_DATA_URL
+    from broker.iiflxts.baseurl import resolve_urls
     from broker.iiflxts.api.auth_api import _xts_error
     from utils.httpx_client import get_httpx_client
 
     client = get_httpx_client()
     headers = {"Content-Type": "application/json"}
+    _, interactive_url, market_data_url = resolve_urls()
 
     # 1) Interactive (trading) session
     try:
         r = client.post(
-            f"{INTERACTIVE_URL}/user/session",
+            f"{interactive_url}/user/session",
             json={"appKey": app_key, "secretKey": secret, "source": "WebAPI"},
             headers=headers,
         )
@@ -79,7 +80,7 @@ def login(creds: dict) -> dict:
     if mkt_key and mkt_sec:
         try:
             fr = client.post(
-                f"{MARKET_DATA_URL}/auth/login",
+                f"{market_data_url}/auth/login",
                 json={"appKey": mkt_key, "secretKey": mkt_sec, "source": "WebAPI"},
                 headers=headers,
             )

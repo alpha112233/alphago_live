@@ -4,7 +4,7 @@ import os
 import httpx
 import requests
 
-from broker.iiflxts.baseurl import INTERACTIVE_URL, MARKET_DATA_URL
+from broker.iiflxts.baseurl import resolve_urls
 from utils.httpx_client import get_httpx_client
 from utils.logging import get_logger
 
@@ -39,7 +39,8 @@ def authenticate_broker(request_token):
 
         headers = {"Content-Type": "application/json"}
 
-        session_url = f"{INTERACTIVE_URL}/user/session"
+        _, interactive_url, _ = resolve_urls()
+        session_url = f"{interactive_url}/user/session"
         response = client.post(session_url, json=payload, headers=headers)
 
         if response.status_code == 200:
@@ -92,7 +93,8 @@ def get_feed_token():
         feed_headers = {"Content-Type": "application/json"}
 
         # Get feed token
-        feed_url = f"{MARKET_DATA_URL}/auth/login"
+        _, _, market_data_url = resolve_urls()
+        feed_url = f"{market_data_url}/auth/login"
         client = get_httpx_client()
         feed_response = client.post(feed_url, json=feed_payload, headers=feed_headers)
 

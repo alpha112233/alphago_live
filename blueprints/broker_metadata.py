@@ -103,6 +103,8 @@ BROKER_FIELDS: dict[str, list[dict]] = {
          "help": "From your IIFL XTS Market Data API app (a SEPARATE app from Interactive — needed for quotes/streaming)."},
         {"name": "api_secret_market", "label": "Market Data Secret Key", "type": "password", "required": True,
          "help": "Secret key of the IIFL XTS Market Data app."},
+        {"name": "base_url", "label": "XTS API Base URL (optional)", "type": "text", "required": False,
+         "help": "Only if IIFL gave you an XTS host other than https://ttblaze.iifl.com. Paste the exact API base URL from your IIFL onboarding (e.g. https://xts.yourdealer.com). Leave blank for the default ttblaze.iifl.com."},
     ],
     "groww": [_TEXT_KEY,
         {"name": "api_secret", "label": "API Secret (approval mode, optional)",
@@ -416,6 +418,12 @@ IIFL XTS issues **two separate API apps** — you need the keys from BOTH:
    - Market Data App Key + Market Data Secret Key
 4. Save → Make Active. We log in automatically each day — **no redirect URL and
    no daily Connect click required.**
+
+**If login says "Data Not found":** that's IIFL rejecting the request. Two
+causes — (a) the **dedicated IPv4 isn't whitelisted** with IIFL yet (do that
+first), or (b) your keys are registered on a **different XTS host** than the
+default `ttblaze.iifl.com` — in that case paste your host into the **XTS API
+Base URL** field above (then reconnect).
 
 ℹ️ If IIFL tells you the API `source` for your account is not the default
 `WebAPI`, let us know — it's a one-line setting.

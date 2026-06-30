@@ -87,6 +87,26 @@ def bootstrap_active_broker() -> None:
         if redirect_url:
             os.environ["REDIRECT_URL"] = redirect_url
 
+        # Per-customer XTS base URL (IIFL XTS issues different hosts per dealer).
+        # Stored in broker_creds extra.base_url; read by broker/iiflxts/baseurl.py.
+        extra = creds.get("extra") or {}
+        xts_base = (extra.get("base_url") or extra.get("xts_base_url") or "").strip()
+        if xts_base:
+            os.environ["BROKER_XTS_BASE_URL"] = xts_base
+            # A custom XTS host is almost certainly IPv4-only (like ttblaze) and
+            # NOT in DEFAULT_V4_HOSTS — register it in EGRESS_V4_HOSTS so the
+            # httpx client routes it via the customer's dedicated v4 proxy
+            # (otherwise it egresses from the v6 default and IIFL rejects it).
+            try:
+                from urllib.parse import urlparse
+                host = urlparse(xts_base if "://" in xts_base else f"https://{xts_base}").hostname
+                if host:
+                    hosts = {h.strip().lower() for h in (os.environ.get("EGRESS_V4_HOSTS") or "").split(",") if h.strip()}
+                    hosts.add(host.lower())
+                    os.environ["EGRESS_V4_HOSTS"] = ",".join(sorted(hosts))
+            except Exception:
+                pass
+
         logger.info(f"broker bootstrap: activated '{broker}' from broker_creds_db at startup")
     except Exception as exc:
         logger.exception(f"broker bootstrap: failed (continuing anyway): {exc}")
