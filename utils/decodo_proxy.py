@@ -59,6 +59,7 @@ DEFAULT_V4_HOSTS = {
     "openapi.motilaloswal.com",          # Motilal Oswal      — no AAAA (2026-06-07)
     "api.mstock.trade",                  # m.stock
     "ttblaze.compositedge.com",          # Compositedge
+    "ttblaze.iifl.com",                  # IIFL Securities XTS — no AAAA (2026-07-01)
     "api.shoonya.com",                   # Shoonya / Finvasia
     "openapi.firstock.in",               # Firstock
     "api.tradejini.com",                 # Tradejini
@@ -85,6 +86,7 @@ V4_ONLY_BROKERS = {
     "arihant",       # tradebridge.arihantplus.com — no AAAA (2026-06-07)
     "hdfcsec",       # developer.hdfcsec.com — no AAAA (2026-06-07)
     "motilal",       # openapi.motilaloswal.com — no AAAA (2026-06-07)
+    "iiflxts",       # ttblaze.iifl.com — no AAAA (2026-07-01); IIFL XTS needs a dedicated v4
     # Removed: 'icicidirect' — api.icicidirect.com publishes
     # AAAA 2001:df3:140:1::b (verified 2026-06-07). Goes via the
     # customer's dedicated /128 like every other v6-compat broker.
