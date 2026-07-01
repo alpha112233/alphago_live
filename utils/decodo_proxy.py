@@ -60,6 +60,7 @@ DEFAULT_V4_HOSTS = {
     "api.mstock.trade",                  # m.stock
     "ttblaze.compositedge.com",          # Compositedge
     "ttblaze.iifl.com",                  # IIFL Securities XTS — no AAAA (2026-07-01)
+    "blazemum.indiainfoline.com",        # IIFL/IndiaInfoline XTS (blaze mumbai) — no AAAA (2026-07-01)
     "api.shoonya.com",                   # Shoonya / Finvasia
     "openapi.firstock.in",               # Firstock
     "api.tradejini.com",                 # Tradejini

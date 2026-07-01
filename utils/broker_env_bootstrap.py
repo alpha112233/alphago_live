@@ -87,25 +87,35 @@ def bootstrap_active_broker() -> None:
         if redirect_url:
             os.environ["REDIRECT_URL"] = redirect_url
 
-        # Per-customer XTS base URL (IIFL XTS issues different hosts per dealer).
-        # Stored in broker_creds extra.base_url; read by broker/iiflxts/baseurl.py.
+        # Per-customer XTS base URLs (IIFL XTS issues different hosts per dealer;
+        # Interactive and Market Data hosts can differ). Stored in broker_creds
+        # extra.base_url / extra.base_url_market; read by broker/iiflxts/baseurl.py.
         extra = creds.get("extra") or {}
         xts_base = (extra.get("base_url") or extra.get("xts_base_url") or "").strip()
-        if xts_base:
-            os.environ["BROKER_XTS_BASE_URL"] = xts_base
-            # A custom XTS host is almost certainly IPv4-only (like ttblaze) and
-            # NOT in DEFAULT_V4_HOSTS — register it in EGRESS_V4_HOSTS so the
-            # httpx client routes it via the customer's dedicated v4 proxy
+        xts_mkt = (extra.get("base_url_market") or extra.get("market_login_url") or "").strip()
+        _v4_hosts = {h.strip().lower() for h in (os.environ.get("EGRESS_V4_HOSTS") or "").split(",") if h.strip()}
+
+        def _register_v4(url: str):
+            # A custom XTS host is almost certainly IPv4-only (like ttblaze /
+            # blazemum) and NOT in DEFAULT_V4_HOSTS — register it in EGRESS_V4_HOSTS
+            # so the httpx client routes it via the customer's dedicated v4 proxy
             # (otherwise it egresses from the v6 default and IIFL rejects it).
             try:
                 from urllib.parse import urlparse
-                host = urlparse(xts_base if "://" in xts_base else f"https://{xts_base}").hostname
+                host = urlparse(url if "://" in url else f"https://{url}").hostname
                 if host:
-                    hosts = {h.strip().lower() for h in (os.environ.get("EGRESS_V4_HOSTS") or "").split(",") if h.strip()}
-                    hosts.add(host.lower())
-                    os.environ["EGRESS_V4_HOSTS"] = ",".join(sorted(hosts))
+                    _v4_hosts.add(host.lower())
             except Exception:
                 pass
+
+        if xts_base:
+            os.environ["BROKER_XTS_BASE_URL"] = xts_base
+            _register_v4(xts_base)
+        if xts_mkt:
+            os.environ["BROKER_XTS_MARKET_URL"] = xts_mkt
+            _register_v4(xts_mkt)
+        if _v4_hosts:
+            os.environ["EGRESS_V4_HOSTS"] = ",".join(sorted(_v4_hosts))
 
         logger.info(f"broker bootstrap: activated '{broker}' from broker_creds_db at startup")
     except Exception as exc:
