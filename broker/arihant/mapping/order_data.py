@@ -46,6 +46,35 @@ def map_order_data(order_data: list[dict]) -> list[dict]:
     return out
 
 
+def calculate_order_statistics(order_data: list[dict]) -> dict:
+    """Order-book totals (buy/sell/completed/open/rejected), computed over the
+    MAPPED rows — `action` and `order_status` are already OpenAlgo-normalized
+    (BUY/SELL, uppercase status). Required by services/orderbook_service.py's
+    import_broker_module; without it the whole /orderbook path 404s for arihant."""
+    total_buy_orders = total_sell_orders = 0
+    total_completed_orders = total_open_orders = total_rejected_orders = 0
+    for order in (order_data or []):
+        action = str(order.get("action") or "").upper()
+        if action == "BUY":
+            total_buy_orders += 1
+        elif action == "SELL":
+            total_sell_orders += 1
+        status = str(order.get("order_status") or "").upper()
+        if status in ("COMPLETE", "COMPLETED", "EXECUTED", "FILLED", "TRADED"):
+            total_completed_orders += 1
+        elif status in ("OPEN", "PENDING", "NEW", "TRIGGER PENDING", "PLACED"):
+            total_open_orders += 1
+        elif status in ("REJECTED", "REJECT"):
+            total_rejected_orders += 1
+    return {
+        "total_buy_orders": total_buy_orders,
+        "total_sell_orders": total_sell_orders,
+        "total_completed_orders": total_completed_orders,
+        "total_open_orders": total_open_orders,
+        "total_rejected_orders": total_rejected_orders,
+    }
+
+
 def transform_order_data(order_data: list[dict]) -> list[dict]:
     """Alias used by some OpenAlgo views — same shape as map_order_data."""
     return map_order_data(order_data)
