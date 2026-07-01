@@ -1307,6 +1307,22 @@ def exit_signal_endpoint(inbox_slug: str):
     if not signal_id:
         return jsonify({"status": "error", "message": "signal_id is required"}), 400
 
+    # Optional marketable-LIMIT price for the reverse/cover order (the CLOSE
+    # leg below). Backward-compatible: when the publisher omits `price` (or
+    # sends price <= 0) the close stays a MARKET order exactly as before.
+    # IIFL XTS ALGO-enabled accounts REJECT market orders ("e-orders-0002:
+    # Market order Or Price 0 is not allowed for ALGO enabled orders"), so the
+    # publisher forwards {"price": <float>, "pricetype": "LIMIT"} to force the
+    # cover to a LIMIT @ that (caller-chosen, marketable) price. We gate on a
+    # positive price: a "LIMIT" pricetype with no/zero price can't produce a
+    # valid limit order (XTS also rejects Price 0), so it falls back to MARKET.
+    try:
+        exit_price = float(body.get("price") or 0)
+    except (TypeError, ValueError):
+        exit_price = 0.0
+    exit_pricetype = str(body.get("pricetype") or "").strip().upper()
+    close_as_limit = exit_price > 0 and exit_pricetype in ("", "LIMIT")
+
     prior, err, code = _lookup_original_for_modify_or_cancel(inbox.id, signal_id)
     if err is not None:
         return jsonify({"status": "error", "message": err}), code
@@ -1393,16 +1409,21 @@ def exit_signal_endpoint(inbox_slug: str):
                 action_taken = "already_closed"
             else:
                 close_qty = min(our_filled, abs(broker_net))
+                # Back-compat default is MARKET @ price 0. When the publisher
+                # supplied a positive `price` (IIFL XTS ALGO accounts), place a
+                # LIMIT cover at that marketable price instead.
+                close_pricetype = "LIMIT" if close_as_limit else "MARKET"
+                close_price = str(exit_price) if close_as_limit else "0"
                 close_order_data = {
                     "apikey": "distribution-internal",
                     "strategy": f"distribution:{inbox.name}:exit",
                     "symbol": symbol,
                     "exchange": exchange,
                     "action": opposite,
-                    "pricetype": "MARKET",
+                    "pricetype": close_pricetype,
                     "product": product,
                     "quantity": str(close_qty),
-                    "price": "0",
+                    "price": close_price,
                     "trigger_price": "0",
                     "disclosed_quantity": str(payload.get("disclosed_quantity") or 0),
                 }
@@ -1440,7 +1461,8 @@ def exit_signal_endpoint(inbox_slug: str):
                         "_exit_of": signal_id,
                         "symbol": symbol, "exchange": exchange,
                         "action": opposite, "quantity": close_qty,
-                        "pricetype": "MARKET", "product": product,
+                        "pricetype": close_pricetype, "product": product,
+                        "price": close_price,
                     },
                     status="placed",
                     broker_used=broker,
