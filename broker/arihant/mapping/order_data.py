@@ -76,8 +76,13 @@ def calculate_order_statistics(order_data: list[dict]) -> dict:
 
 
 def transform_order_data(order_data: list[dict]) -> list[dict]:
-    """Alias used by some OpenAlgo views — same shape as map_order_data."""
-    return map_order_data(order_data)
+    """Called on the ALREADY-MAPPED rows — orderbook_service runs
+    map_order_data() first, then transform_order_data() on its output. So
+    return the rows as-is. (Re-running map_order_data here double-maps: the
+    mapped rows have `symbol` as a plain string + renamed keys like
+    `order_status`/`filled_quantity`, so a second pass finds none of the raw
+    fields and blanks EVERY field — the 2026-07-01 empty-orderbook bug.)"""
+    return order_data or []
 
 
 def map_trade_data(trade_data: list[dict]) -> list[dict]:
