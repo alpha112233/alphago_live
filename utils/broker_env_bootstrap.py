@@ -29,6 +29,38 @@ from utils.logging import get_logger
 logger = get_logger(__name__)
 
 
+def apply_xts_env(extra: dict) -> None:
+    """Stamp the per-customer IIFL XTS base URLs from a broker_creds `extra`
+    dict into os.environ (read by broker/iiflxts/baseurl.py), and register the
+    hosts in EGRESS_V4_HOSTS so they egress via the customer's dedicated v4
+    (IIFL XTS hosts are IPv4-only). Called from BOTH the startup bootstrap AND
+    the save/activate env-refresh, so a base URL entered in the UI takes effect
+    on the next Connect with no container restart. Interactive and Market Data
+    hosts may differ (base_url vs base_url_market)."""
+    extra = extra or {}
+    xts_base = (extra.get("base_url") or extra.get("xts_base_url") or "").strip()
+    xts_mkt = (extra.get("base_url_market") or extra.get("market_login_url") or "").strip()
+    v4_hosts = {h.strip().lower() for h in (os.environ.get("EGRESS_V4_HOSTS") or "").split(",") if h.strip()}
+
+    def _register_v4(url: str):
+        try:
+            from urllib.parse import urlparse
+            host = urlparse(url if "://" in url else f"https://{url}").hostname
+            if host:
+                v4_hosts.add(host.lower())
+        except Exception:
+            pass
+
+    if xts_base:
+        os.environ["BROKER_XTS_BASE_URL"] = xts_base
+        _register_v4(xts_base)
+    if xts_mkt:
+        os.environ["BROKER_XTS_MARKET_URL"] = xts_mkt
+        _register_v4(xts_mkt)
+    if v4_hosts:
+        os.environ["EGRESS_V4_HOSTS"] = ",".join(sorted(v4_hosts))
+
+
 def bootstrap_active_broker() -> None:
     """Re-populate os.environ from the DB's active broker, if any.
 
@@ -87,35 +119,10 @@ def bootstrap_active_broker() -> None:
         if redirect_url:
             os.environ["REDIRECT_URL"] = redirect_url
 
-        # Per-customer XTS base URLs (IIFL XTS issues different hosts per dealer;
-        # Interactive and Market Data hosts can differ). Stored in broker_creds
-        # extra.base_url / extra.base_url_market; read by broker/iiflxts/baseurl.py.
-        extra = creds.get("extra") or {}
-        xts_base = (extra.get("base_url") or extra.get("xts_base_url") or "").strip()
-        xts_mkt = (extra.get("base_url_market") or extra.get("market_login_url") or "").strip()
-        _v4_hosts = {h.strip().lower() for h in (os.environ.get("EGRESS_V4_HOSTS") or "").split(",") if h.strip()}
-
-        def _register_v4(url: str):
-            # A custom XTS host is almost certainly IPv4-only (like ttblaze /
-            # blazemum) and NOT in DEFAULT_V4_HOSTS — register it in EGRESS_V4_HOSTS
-            # so the httpx client routes it via the customer's dedicated v4 proxy
-            # (otherwise it egresses from the v6 default and IIFL rejects it).
-            try:
-                from urllib.parse import urlparse
-                host = urlparse(url if "://" in url else f"https://{url}").hostname
-                if host:
-                    _v4_hosts.add(host.lower())
-            except Exception:
-                pass
-
-        if xts_base:
-            os.environ["BROKER_XTS_BASE_URL"] = xts_base
-            _register_v4(xts_base)
-        if xts_mkt:
-            os.environ["BROKER_XTS_MARKET_URL"] = xts_mkt
-            _register_v4(xts_mkt)
-        if _v4_hosts:
-            os.environ["EGRESS_V4_HOSTS"] = ",".join(sorted(_v4_hosts))
+        # Per-customer XTS base URLs (IIFL XTS) — same helper the save/activate
+        # env-refresh uses, so a base URL entered in the UI takes effect on the
+        # very next Connect without a container restart.
+        apply_xts_env(creds.get("extra") or {})
 
         logger.info(f"broker bootstrap: activated '{broker}' from broker_creds_db at startup")
     except Exception as exc:

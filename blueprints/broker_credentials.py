@@ -449,6 +449,17 @@ def _sync_active_broker_to_env(creds: dict, broker: str) -> tuple[bool, str | No
     os.environ["BROKER_API_SECRET_MARKET"] = creds.get("api_secret_market", "") or ""
     if redirect_url:
         os.environ["REDIRECT_URL"] = redirect_url
+    # IIFL XTS per-customer base URLs — take effect on the very next Connect
+    # (no restart) when the customer enters them in the UI and saves. Rebuild the
+    # httpx client so the new host's v4-proxy mount is active for the login call.
+    try:
+        from utils.broker_env_bootstrap import apply_xts_env
+        apply_xts_env(creds.get("extra") or {})
+        if (creds.get("extra") or {}).get("base_url") or (creds.get("extra") or {}).get("base_url_market"):
+            from utils.httpx_client import reset_httpx_client
+            reset_httpx_client()
+    except Exception:
+        logger.exception("apply_xts_env failed on save/activate")
     return True, None
 
 
