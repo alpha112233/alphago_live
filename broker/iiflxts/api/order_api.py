@@ -6,7 +6,7 @@ import time
 
 import httpx
 
-from broker.iiflxts.baseurl import INTERACTIVE_URL
+from broker.iiflxts.baseurl import resolve_urls
 from broker.iiflxts.mapping.transform_data import (
     map_product_type,
     reverse_map_product_type,
@@ -33,7 +33,7 @@ def get_api_response(endpoint, auth, method="GET", payload=""):
         "Content-Type": "application/json",
     }
 
-    url = f"{INTERACTIVE_URL}{endpoint}"
+    url = f"{resolve_urls()[1]}{endpoint}"
 
     # logger.info(f"Request URL: {url}")
     # logger.info(f"Headers: {headers}")
@@ -162,7 +162,7 @@ def place_order_api(data, auth):
     client = get_httpx_client()
 
     # Make the request using the shared client
-    response = client.post(f"{INTERACTIVE_URL}/orders", headers=headers, json=newdata)
+    response = client.post(f"{resolve_urls()[1]}/orders", headers=headers, json=newdata)
 
     # Add status attribute for compatibility
     response.status = response.status_code
@@ -344,7 +344,7 @@ def cancel_order(orderid, auth):
     payload = json.dumps({"appOrderID": orderid, "orderUniqueIdentifier": "openalgo"})
 
     # Make the request using the shared client
-    response = client.delete(f"{INTERACTIVE_URL}/orders?appOrderID={orderid}", headers=headers)
+    response = client.delete(f"{resolve_urls()[1]}/orders?appOrderID={orderid}", headers=headers)
     # Add status attribute for compatibility with the existing codebase
     response.status = response.status_code
 
@@ -383,7 +383,7 @@ def modify_order(data, auth):
     payload = json.dumps(transformed_data)
 
     # Make the request using the shared client
-    response = client.put(f"{INTERACTIVE_URL}/orders", headers=headers, content=payload)
+    response = client.put(f"{resolve_urls()[1]}/orders", headers=headers, content=payload)
 
     # Add status attribute for compatibility with the existing codebase
     response.status = response.status_code

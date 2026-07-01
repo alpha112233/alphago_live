@@ -4,7 +4,7 @@ import http.client
 import json
 import os
 
-from broker.iiflxts.baseurl import INTERACTIVE_URL
+from broker.iiflxts.baseurl import resolve_urls
 from utils.httpx_client import get_httpx_client
 from utils.logging import get_logger
 
@@ -22,7 +22,7 @@ def get_margin_data(auth_token):
 
     headers = {"authorization": auth_token, "Content-Type": "application/json"}
 
-    response = client.get(f"{INTERACTIVE_URL}/user/balance", headers=headers)
+    response = client.get(f"{resolve_urls()[1]}/user/balance", headers=headers)
 
     margin_data = response.json()
 

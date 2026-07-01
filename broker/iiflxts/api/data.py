@@ -8,7 +8,7 @@ import pytz
 from flask import session
 
 from broker.iiflxts.api.auth_api import get_feed_token as refresh_feed_token
-from broker.iiflxts.baseurl import MARKET_DATA_URL
+from broker.iiflxts.baseurl import resolve_urls
 from broker.iiflxts.database.master_contract_db import SymToken, db_session
 from database.auth_db import get_feed_token
 from database.token_db import get_br_symbol, get_brexchange, get_oa_symbol
@@ -35,7 +35,7 @@ def get_api_response(endpoint, auth, method="GET", payload="", feed_token=None, 
         "Content-Type": "application/json",
     }
 
-    base_url = MARKET_DATA_URL  # Default to market data URL
+    base_url = resolve_urls()[2]  # Default to market data URL
 
     url = f"{base_url}{endpoint}"
 
