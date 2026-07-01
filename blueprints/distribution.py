@@ -1625,6 +1625,76 @@ def get_holdings_endpoint(inbox_slug: str):
     }), 200
 
 
+@distribution_bp.route("/distribution/inbox/<inbox_slug>/orderbook", methods=["GET"])
+def get_orderbook_endpoint(inbox_slug: str):
+    """Return the current broker ORDER BOOK for the inbox's owner. Read-only.
+
+    Same auth / IP-allowlist / broker-resolve as /positions and /holdings. The
+    publisher's close flow reads this to find SAME-DAY EXECUTED CNC/DELIVERY
+    buys (BTST): those don't yet show in the intraday position book (they're
+    delivery, not intraday) nor in settled holdings (they settle T+1), but the
+    executed BUY order is right here in the order book, so the position is real
+    and closable. Response data: {"orders": [...]} (OpenAlgo-normalized:
+    orderid, symbol, exchange, action, product, order_status, quantity,
+    filled_quantity, average_price, ...)."""
+    src_ip = _real_source_ip()
+
+    inbox = get_inbox_by_slug(inbox_slug)
+    if inbox is None:
+        return jsonify({"status": "error", "message": "unknown inbox"}), 404
+    if inbox.status != "active":
+        return jsonify({"status": "error", "message": "inbox disabled"}), 403
+
+    _auth_ok, _auth_err = _authenticate_inbox_request(inbox)
+    if not _auth_ok:
+        return jsonify({"status": "error", "message": _auth_err}), 401
+
+    if not _ip_is_allowed(src_ip, inbox.allowed_ips):
+        return jsonify({
+            "status": "error",
+            "message": f"source IP {src_ip} not in this inbox's allowlist",
+        }), 403
+
+    broker, auth_token, err = _resolve_routing_broker(inbox.user_id, inbox.broker_override)
+    if err is not None:
+        return jsonify({"status": "error", "broker": broker, "message": err}), 503
+
+    try:
+        from database.settings_db import get_analyze_mode
+        analyze_on = bool(get_analyze_mode())
+    except Exception:
+        analyze_on = False
+
+    try:
+        from services.orderbook_service import get_orderbook, get_orderbook_with_auth
+        if analyze_on:
+            success, response_data, status_code = get_orderbook_with_auth(
+                "distribution-internal", broker, {"apikey": "distribution-internal"},
+            )
+        else:
+            success, response_data, status_code = get_orderbook(
+                auth_token=auth_token, broker=broker,
+            )
+    except Exception as e:
+        logger.exception("get_orderbook raised")
+        return jsonify({"status": "error", "broker": broker, "message": str(e)}), 500
+
+    if not success:
+        return jsonify({
+            "status": "error",
+            "broker": broker,
+            "message": (response_data or {}).get("message") or "failed to fetch orderbook",
+        }), status_code
+
+    from datetime import datetime, timezone
+    return jsonify({
+        "status": "success",
+        "broker": broker,
+        "data": (response_data or {}).get("data") or {},
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+    }), 200
+
+
 # ===========================================================================
 # System endpoints — server-to-server (bearer-authed by PROVISIONER_SHARED_SECRET)
 # ===========================================================================
