@@ -45,6 +45,7 @@ from typing import Optional
 import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +231,35 @@ def init_auto_login_scheduler() -> None:
         f"auto-login scheduler started (dow={dow} time={hour:02d}:{minute:02d} IST) "
         f"+ audit-log prune at 03:00 IST"
     )
+
+    # On-startup re-mint: the daily job only fires at 08:00 IST, so a container
+    # that (re)starts MID-DAY — a redeploy, crash-restart, or host reboot — would
+    # otherwise have no authenticated broker session until tomorrow morning, and
+    # every order rejects as "Failed to place order". Fire one auto-login pass a
+    # few seconds after boot so the session survives restarts. Gated to weekday
+    # trading hours; off-hours restarts rely on the 08:00 job (a token minted at
+    # 02:00 could expire before the open for some brokers). Headless brokers
+    # (iiflxts/indmoney) re-mint with zero customer action; TOTP brokers use
+    # their saved seed exactly as the daily job does.
+    if (os.getenv("AUTO_LOGIN_ON_STARTUP") or "true").strip().lower() in ("1", "true", "yes", "on"):
+        from datetime import datetime, timedelta
+
+        now_ist = datetime.now(_IST)
+        in_trading_window = (now_ist.weekday() < 5) and (7 <= now_ist.hour < 16)
+        if in_trading_window:
+            _scheduler.add_job(
+                run_daily_auto_logins,
+                trigger=DateTrigger(run_date=now_ist + timedelta(seconds=15), timezone=_IST),
+                id="auto_login_startup",
+                name="On-startup broker auto-login (survive restart)",
+                replace_existing=True,
+            )
+            logger.info("auto-login: scheduled on-startup re-mint in ~15s (mid-day restart recovery)")
+        else:
+            logger.info(
+                "auto-login: outside weekday trading window — skipping on-startup re-mint "
+                "(daily 08:00 IST job will establish sessions)"
+            )
 
 
 def _run_audit_prune() -> None:

@@ -899,6 +899,15 @@ def auto_login_status_endpoint():
     return jsonify({"status": "success", "data": sched})
 
 
+# Headless brokers whose auto-login mints a session from stored keys alone,
+# with NO TOTP seed. MUST stay in sync with the scheduler's _NO_TOTP_AUTO_LOGIN
+# (services/auto_login_scheduler_service.py):
+#   • indmoney: long-lived access token pasted by the customer.
+#   • iiflxts:  XTS Interactive appKey/secretKey -> daily session token, fully
+#     headless (no OTP/browser — see broker_login_adapters/iiflxts.py).
+_HEADLESS_NO_TOTP_BROKERS = {"indmoney", "iiflxts"}
+
+
 def run_auto_login_for_broker(user_id: int, username: str, broker: str) -> dict:
     """Core auto-login logic, shared between the HTTP route and the daily
     scheduler. Decrypts creds → runs adapter → persists access_token →
@@ -935,10 +944,13 @@ def run_auto_login_for_broker(user_id: int, username: str, broker: str) -> dict:
             "error": f"No saved credentials for '{broker}'",
         }
 
-    # Most brokers' auto-login needs a TOTP seed. IndMoney is the exception
-    # — its "access token" is the long-lived secret the customer pastes, so
-    # we don't gate it on totp_seed.
-    if broker != "indmoney" and not db_creds.get("totp_seed"):
+    # Most brokers' auto-login needs a TOTP seed. Headless brokers are exempt
+    # (see _HEADLESS_NO_TOTP_BROKERS above). Bug fix 2026-07-01: iiflxts was NOT
+    # exempt here (only indmoney was), so this returned no_totp for IIFL XTS —
+    # breaking BOTH the daily 08:00 scheduler AND on-startup auto-login, which
+    # left XTS customers (e.g. rohit) with no broker session after any restart
+    # and every order rejected as "Failed to place order".
+    if broker not in _HEADLESS_NO_TOTP_BROKERS and not db_creds.get("totp_seed"):
         return {
             "ok": False,
             "error_kind": "no_totp",
