@@ -344,6 +344,7 @@ def place_order_api(data: dict, auth: str):
     body = transform_data(data, token)
     log.info(f"Arihant place_order body: {body}")
     resp = _request("order.place", "POST", auth, body=body, with_geo=True)
+    log.info(f"Arihant order.place RAW resp: {resp}")
 
     if not _is_success(resp):
         return _make_resp_obj(resp), {
@@ -352,6 +353,10 @@ def place_order_api(data: dict, auth: str):
         }, None
 
     inner = resp.get("data") or {}
+    # F&O / some segments return `data` as a single-element LIST rather than a
+    # dict — normalise so the ordId extraction below works either way.
+    if isinstance(inner, list):
+        inner = inner[0] if inner else {}
     # Arihant fills `rejReason` with a PLACEHOLDER ("--") for orders that were
     # NOT rejected (Executed / Open). Treat it as a real rejection ONLY when it
     # carries a meaningful message — otherwise a successfully-placed order gets
@@ -365,7 +370,12 @@ def place_order_api(data: dict, auth: str):
             "status": "error", "message": rej_reason,
         }, None
 
-    orderid = inner.get("ordId")
+    # Order id can arrive under different keys across segments/versions.
+    orderid = (
+        inner.get("ordId") or inner.get("nOrdNo") or inner.get("NOrdNo")
+        or inner.get("orderId") or inner.get("order_id") or inner.get("id")
+        or resp.get("ordId") or resp.get("nOrdNo")
+    )
     _invalidate_position_cache(auth)
     return _make_resp_obj(resp), {
         "status": "success",
