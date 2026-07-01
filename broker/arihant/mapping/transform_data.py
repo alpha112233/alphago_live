@@ -82,6 +82,24 @@ def _instrument_for_exchange(exchange: str) -> str:
     return "STK"  # NSE / BSE
 
 
+def _fno_lotsize(symbol: str, exchange: str) -> int | None:
+    """Contract lot size for an F&O symbol from the scrip master (SymToken).
+    Returns None if not found — caller then falls back to 1. Arihant silently
+    drops an F&O order placed with lotSize=1, so this must resolve for FUT/OPT."""
+    if not symbol:
+        return None
+    try:
+        from database.symbol import SymToken, db_session
+        row = (
+            db_session.query(SymToken)
+            .filter_by(symbol=symbol, exchange=(exchange or "").upper())
+            .first()
+        )
+        return int(row.lotsize) if row and row.lotsize else None
+    except Exception:
+        return None
+
+
 def transform_data(data: dict, token: str | int | None) -> dict:
     """OpenAlgo canonical dict → Arihant place-order body.
 
@@ -103,12 +121,22 @@ def transform_data(data: dict, token: str | int | None) -> dict:
     exc_in = (data.get("exchange") or "NSE").upper()
     if exc_in in ("NSE", "BSE") and "-" not in sym and sym:
         sym = f"{sym}-EQ"
+    instrument = _instrument_for_exchange(data.get("exchange"))
+    # Lot size: equity = 1. For F&O (FUT/OPT) arihant needs the REAL contract
+    # lot size — a lotSize of 1 makes arihant accept the request at the API
+    # layer but the exchange silently drops it (success, but no ordId, order
+    # never appears in the book — 2026-07-01 NIFTY option incident). Prefer the
+    # caller-supplied lot_size; else look it up from the scrip master.
+    lot_size = int(data.get("lot_size") or 0)
+    if lot_size < 1 and instrument in ("FUT", "OPT"):
+        lot_size = _fno_lotsize(data.get("symbol"), exc_in) or 1
+    lot_size = max(1, lot_size)
     return {
         "symbol": sym,
         "exc": exc_in,
         "excToken": str(token) if token is not None else "",
-        "instrument": _instrument_for_exchange(data.get("exchange")),
-        "lotSize": int(data.get("lot_size") or 1),
+        "instrument": instrument,
+        "lotSize": lot_size,
         "ordAction": map_transaction_type(data.get("action")),
         # OpenAlgo's canonical schema names this 'pricetype' — accept all
         # three to avoid silent downgrade to 'Limit' (which Arihant rejects
