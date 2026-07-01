@@ -376,6 +376,16 @@ def place_order_api(data: dict, auth: str):
         or inner.get("orderId") or inner.get("order_id") or inner.get("id")
         or resp.get("ordId") or resp.get("nOrdNo")
     )
+    if not orderid:
+        # Passed _is_success + the rejReason gate but there's NO order id —
+        # this is a soft reject arihant returns with an EGxxx infoID (e.g. EG001
+        # "Invalid request") that _is_success (only fails on ERR*) let through.
+        # Surface the broker message as an error instead of a hollow "success"
+        # the caller can't track (2026-07-01 F&O EG001 incident).
+        return _make_resp_obj(resp), {
+            "status": "error",
+            "message": resp.get("infoMsg") or "Arihant returned no order id",
+        }, None
     _invalidate_position_cache(auth)
     return _make_resp_obj(resp), {
         "status": "success",

@@ -82,6 +82,20 @@ def _instrument_for_exchange(exchange: str) -> str:
     return "STK"  # NSE / BSE
 
 
+def _br_symbol(symbol: str, exchange: str) -> str | None:
+    """Arihant broker symbol (brsymbol) from the scrip master. Equity =
+    'RELIANCE-EQ', F&O = 'NIFTY2670724000CE' (compressed) — arihant rejects the
+    canonical OpenAlgo symbol for F&O with EG001 'Invalid request'. None on miss
+    (caller falls back to the -EQ heuristic)."""
+    if not symbol:
+        return None
+    try:
+        from database.token_db import get_br_symbol
+        return get_br_symbol(symbol, (exchange or "").upper()) or None
+    except Exception:
+        return None
+
+
 def _fno_lotsize(symbol: str, exchange: str) -> int | None:
     """Contract lot size for an F&O symbol from the scrip master (SymToken).
     Returns None if not found — caller then falls back to 1. Arihant silently
@@ -117,10 +131,18 @@ def transform_data(data: dict, token: str | int | None) -> dict:
     # symbols already carry their own suffix (e.g. NIFTY24DEC25000CE) so
     # leave anything that already contains '-' or doesn't start with letters
     # untouched.
-    sym = data.get("symbol") or ""
     exc_in = (data.get("exchange") or "NSE").upper()
-    if exc_in in ("NSE", "BSE") and "-" not in sym and sym:
-        sym = f"{sym}-EQ"
+    # Arihant expects its OWN broker symbol (brsymbol), which differs from
+    # OpenAlgo's canonical symbol: equity "RELIANCE" -> "RELIANCE-EQ", but F&O
+    # "NIFTY07JUL2624000CE" -> "NIFTY2670724000CE" (compressed). Sending the
+    # canonical symbol for F&O makes arihant reject with EG001 "Invalid request"
+    # (2026-07-01). Resolve brsymbol from the scrip master; fall back to the
+    # legacy -EQ heuristic only if that lookup fails.
+    sym = _br_symbol(data.get("symbol"), exc_in)
+    if not sym:
+        sym = data.get("symbol") or ""
+        if exc_in in ("NSE", "BSE") and "-" not in sym and sym:
+            sym = f"{sym}-EQ"
     instrument = _instrument_for_exchange(data.get("exchange"))
     # Lot size: equity = 1. For F&O (FUT/OPT) arihant needs the REAL contract
     # lot size — a lotSize of 1 makes arihant accept the request at the API
