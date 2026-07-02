@@ -13,6 +13,22 @@ from __future__ import annotations
 from broker.arihant.mapping.transform_data import reverse_map_product_type
 
 
+def _oa_symbol(brsym, exchange):
+    """Reverse-map arihant's broker tradingSymbol -> OpenAlgo canonical symbol
+    (e.g. NIFTY2670724100PE -> NIFTY07JUL2624100PE) so downstream consumers —
+    notably the publisher's close/positions/holdings symbol matching — get the
+    canonical form. Falls back to the broker symbol if the lookup misses.
+    Without this, arihant read data carries the compressed F&O brsymbol which
+    never matches the canonical symbol the publisher tracks (2026-07-02)."""
+    if not brsym:
+        return ""
+    try:
+        from database.token_db import get_oa_symbol
+        return get_oa_symbol(brsym, (exchange or "").upper()) or brsym
+    except Exception:
+        return brsym
+
+
 def map_order_data(order_data: list[dict]) -> list[dict]:
     """Normalize order book rows. Returns a list of dicts with the
     canonical fields the OpenAlgo /orderbook page expects."""
@@ -28,7 +44,7 @@ def map_order_data(order_data: list[dict]) -> list[dict]:
         out.append({
             "orderid": o.get("ordId"),
             "exchange": (sym.get("exc") or o.get("exc") or "").upper(),
-            "symbol": sym.get("tradingSymbol") or sym.get("symbol") or "",
+            "symbol": _oa_symbol(sym.get("tradingSymbol") or sym.get("symbol"), sym.get("exc")),
             "action": (o.get("ordAction") or "").upper(),
             "quantity": o.get("qty"),
             "price": o.get("price") or o.get("limitPrice"),
@@ -98,7 +114,7 @@ def map_trade_data(trade_data: list[dict]) -> list[dict]:
         out.append({
             "orderid": t.get("ordId"),
             "exchange": (sym.get("exc") or "").upper(),
-            "symbol": sym.get("tradingSymbol") or sym.get("symbol") or "",
+            "symbol": _oa_symbol(sym.get("tradingSymbol") or sym.get("symbol"), sym.get("exc")),
             "action": (t.get("ordAction") or "").upper(),
             "quantity": t.get("qty"),
             "fill_price": t.get("avgPrice") or t.get("price"),
@@ -125,7 +141,7 @@ def map_position_data(position_data: list[dict]) -> list[dict]:
         if not isinstance(sym, dict):
             sym = {}
         out.append({
-            "symbol": sym.get("tradingSymbol") or sym.get("symbol") or "",
+            "symbol": _oa_symbol(sym.get("tradingSymbol") or sym.get("symbol"), sym.get("exc")),
             "exchange": (sym.get("exc") or "").upper(),
             "product": reverse_map_product_type(p.get("prdType")),
             "quantity": p.get("netQty") or p.get("net_qty") or 0,
@@ -164,7 +180,7 @@ def map_portfolio_data(holdings: list[dict]) -> list[dict]:
         if pnlpct is None:
             pnlpct = h.get("pnlPct")
         out.append({
-            "symbol": sym.get("tradingSymbol") or sym.get("symbol") or "",
+            "symbol": _oa_symbol(sym.get("tradingSymbol") or sym.get("symbol"), sym.get("exc")),
             "exchange": (sym.get("exc") or "NSE").upper(),
             "isin": h.get("isin"),
             "quantity": h.get("qty") or h.get("holdingQty") or h.get("totalQty") or h.get("netQty") or 0,
