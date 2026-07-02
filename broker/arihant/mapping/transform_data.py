@@ -44,6 +44,13 @@ _PRD_TYPE_REVERSE = {
     "DELIVERY": "CNC",
     "INTRADAY": "MIS",
     "NRML": "NRML",
+    # Arihant REPORTS an NRML (F&O carry) order's product as "CARRYFORWARD" in
+    # the order/position book even though it ACCEPTS "NRML" on placement. Without
+    # this, read-side product = "CARRYFORWARD" (unmapped) → the publisher's
+    # product-matched close/positions logic never matches → F&O NRML positions
+    # show "broker reports flat" and can't be closed (2026-07-02).
+    "CARRYFORWARD": "NRML",
+    "CF": "NRML",
     "MTF": "MTF",
     "COVER_ORDER": "CO",
     "BRACKET_ORDER": "BO",
