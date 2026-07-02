@@ -114,6 +114,26 @@ def _fno_lotsize(symbol: str, exchange: str) -> int | None:
         return None
 
 
+def _fno_instrument(symbol: str, exchange: str) -> str | None:
+    """Arihant instrument type from the scrip master for F&O: OPTIDX / OPTSTK /
+    FUTIDX / FUTSTK. arihant's order.place rejects the GENERIC 'OPT'/'FUT' with
+    EG001 'Invalid request' — it wants the specific type its own master uses.
+    None on miss (caller falls back to the generic mapping)."""
+    if not symbol:
+        return None
+    try:
+        from database.symbol import SymToken, db_session
+        row = (
+            db_session.query(SymToken)
+            .filter_by(symbol=symbol, exchange=(exchange or "").upper())
+            .first()
+        )
+        it = (row.instrumenttype or "").strip() if row else ""
+        return it or None
+    except Exception:
+        return None
+
+
 def transform_data(data: dict, token: str | int | None) -> dict:
     """OpenAlgo canonical dict → Arihant place-order body.
 
@@ -144,13 +164,25 @@ def transform_data(data: dict, token: str | int | None) -> dict:
         if exc_in in ("NSE", "BSE") and "-" not in sym and sym:
             sym = f"{sym}-EQ"
     instrument = _instrument_for_exchange(data.get("exchange"))
+    # For F&O, arihant wants the SPECIFIC instrument type from its master
+    # (OPTIDX/OPTSTK/FUTIDX/FUTSTK) — the generic 'OPT'/'FUT' is rejected EG001
+    # 'Invalid request' (2026-07-02, even with the correct brsymbol). Resolve it
+    # from the scrip master; keep the generic mapping only as a fallback.
+    if exc_in in ("NFO", "BFO"):
+        _it = _fno_instrument(data.get("symbol"), exc_in)
+        if _it:
+            instrument = _it
     # Lot size: equity = 1. For F&O (FUT/OPT) arihant needs the REAL contract
     # lot size — a lotSize of 1 makes arihant accept the request at the API
     # layer but the exchange silently drops it (success, but no ordId, order
     # never appears in the book — 2026-07-01 NIFTY option incident). Prefer the
     # caller-supplied lot_size; else look it up from the scrip master.
     lot_size = int(data.get("lot_size") or 0)
-    if lot_size < 1 and instrument in ("FUT", "OPT"):
+    # F&O = any exchange-derived option/future instrument. Match on the exchange
+    # (not the instrument string) so the specific master types OPTIDX/OPTSTK/
+    # FUTIDX/FUTSTK all qualify — checking `instrument in ("FUT","OPT")` here
+    # broke once instrument became the specific type (2026-07-02).
+    if lot_size < 1 and exc_in in ("NFO", "BFO", "MCX", "CDS", "NCDEX", "BCD"):
         lot_size = _fno_lotsize(data.get("symbol"), exc_in) or 1
     lot_size = max(1, lot_size)
     return {
