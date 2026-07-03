@@ -28,6 +28,11 @@ FROM python:3.12-slim-bullseye AS production
 #     chromium + fonts-liberation are required by Kaleido 1.x (plotly static
 #     image export) which drives a real headless Chromium via choreographer.
 #     Without these, /chart in the Telegram bot silently fails inside Docker.
+#     libtk8.6 provides libtk8.6.so, needed by the broker module import chain
+#     (via _tkinter). Without it orderbook_service/positionbook READS raise
+#     "libtk8.6.so: cannot open shared object file" so every position-aware EXIT
+#     (Layer-1 close) fails — order PLACEMENT still works, so the gap is silent
+#     (2026-07-03: Rohit's IIFL 08_9 PT could not book). DO NOT remove.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tzdata \
     curl \
@@ -35,7 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgfortran5 \
     chromium \
-    fonts-liberation && \
+    fonts-liberation \
+    libtk8.6 && \
     ln -fs /usr/share/zoneinfo/Asia/Kolkata /etc/localtime && \
     dpkg-reconfigure -f noninteractive tzdata && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
