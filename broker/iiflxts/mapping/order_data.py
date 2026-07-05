@@ -272,7 +272,13 @@ def map_position_data(position_data):
 
 def transform_positions_data(positions_data):
     logger.info(f"positions_data: {positions_data}")
-    positions_data = positions_data.get("positionList", [])
+    # IIFL XTS returns {"positionList": [...]} when positions exist, but a bare
+    # empty list [] on flat days (and None on some error paths). Guard so the
+    # .get() doesn't crash with "'list' object has no attribute 'get'".
+    if isinstance(positions_data, dict):
+        positions_data = positions_data.get("positionList", [])
+    elif not isinstance(positions_data, list):
+        positions_data = []
     transformed_data = []
     # Define exchange mappings
     exchange_mapping = {
