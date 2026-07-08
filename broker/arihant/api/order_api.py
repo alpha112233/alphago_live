@@ -258,9 +258,15 @@ _POSITION_CACHE_TTL = 1.0
 
 def get_positions(auth: str, position_type: str = "NET") -> list[dict]:
     """``position_type`` = 'DAY' (intraday only) | 'NET' (net incl carry).
-    Default NET matches the most common smart-order use case."""
-    body = {"type": position_type}
-    resp = _request("portfolio.positions", "POST", auth, body=body)
+    Default NET matches the most common smart-order use case.
+
+    Arihant's position-book is **GET with `type` as a QUERY param** — NOT a
+    POST with a JSON body. A POST (what this + the ccxt-india SDK originally
+    sent) hits the gateway as `404 "Route Not Found"`, so get_positions
+    silently returned [] for every caller. Verified live 2026-07-08:
+    `GET .../portfolio/v1/position-book?type=NET` → 200 (EGN007 "No data
+    available" on a flat account; real rows under data.positions)."""
+    resp = _request("portfolio.positions", "GET", auth, params={"type": position_type})
     if not _is_success(resp):
         log.error(f"Arihant positions failed: {resp.get('infoMsg')}")
         return []
