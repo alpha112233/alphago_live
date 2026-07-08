@@ -2,37 +2,71 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from broker.arihant.api.order_api import _is_success, _request
 
 log = logging.getLogger(__name__)
 
+# Arihant /funds/v1/get-funds REQUIRES a `segment` query parameter. The only
+# value that returns data is "ALL" (verified live 2026-07-08 against a real
+# account: EQ/EQUITY/FNO/CASH/… all answer EGN007 "invalid segment", and
+# omitting it 400s with "Required parameter 'segment' is not present"). The
+# missing param was the original bug — the dashboard showed 0.00 everywhere +
+# a NaN Utilised because every funds fetch failed with that 400 (whose body
+# carries no infoMsg, so it logged as "funds failed: None"). Overridable via
+# env in case Arihant adds per-segment views later.
+_FUNDS_SEGMENT = os.getenv("ARIHANT_FUNDS_SEGMENT", "ALL").strip() or "ALL"
+
 
 def get_margin_data(auth: str) -> dict:
     """Return a canonical margin dict for the dashboard's Margins page.
 
-    Arihant /funds/get-funds returns a nested object. We project it to
-    the fields OpenAlgo's standard margin view expects:
+    Arihant get-funds returns the balances nested under ``data.funds`` using
+    its own compressed keys (``netCashAvail``, ``cashBal``, ``margnUsed``,
+    ``collateralVal``, ``unrealMTM``, ``realizedPNL``, …). We project to the
+    fields OpenAlgo's standard margin view expects:
       availablecash, collateral, m2munrealized, m2mrealized, utilizeddebits.
-    Anything missing falls back to 0.
+    Each reads the confirmed key first, then tolerant fallbacks, then 0. The
+    raw ``funds`` object is logged so a schema change surfaces in the log.
     """
-    resp = _request("funds.view", "GET", auth)
+    resp = _request("funds.view", "GET", auth, params={"segment": _FUNDS_SEGMENT})
     if not _is_success(resp):
-        log.error(f"Arihant funds failed: {resp.get('infoMsg')}")
+        # Log the FULL envelope — Arihant returns failures with infoMsg=None
+        # (e.g. the segment-missing 400), and without the raw body there's
+        # nothing to diagnose (2026-07-08: adityaneo dashboard 0.00 all day).
+        log.error(
+            f"Arihant funds failed: infoID={resp.get('infoID')} "
+            f"http={resp.get('_http_status')} msg={resp.get('infoMsg')} raw={resp}"
+        )
         return {"availablecash": "0.00", "collateral": "0.00",
                 "m2munrealized": "0.00", "m2mrealized": "0.00",
                 "utilizeddebits": "0.00",
                 "status": "error",
                 "message": resp.get("infoMsg", "funds-view failed")}
     data = resp.get("data") or {}
-    eq = data.get("equity") or data
+    # Real shape is data.funds; tolerate flat/equity wrappers defensively.
+    funds = data.get("funds")
+    if not isinstance(funds, dict):
+        funds = data.get("equity") if isinstance(data.get("equity"), dict) else data
+    log.info(f"Arihant funds raw keys={sorted(funds.keys())} funds={funds}")
     return {
-        "availablecash": _f(eq.get("availableBalance") or eq.get("available")),
-        "collateral": _f(eq.get("collateral") or eq.get("collateralValue")),
-        "m2munrealized": _f(eq.get("unrealizedMtm") or eq.get("unrealized")),
-        "m2mrealized": _f(eq.get("realizedMtm") or eq.get("realized")),
-        "utilizeddebits": _f(eq.get("usedMargin") or eq.get("utilized")),
+        "availablecash": _pick(funds, "netCashAvail", "cashBal", "ttlCashBal",
+                               "notnalCash"),
+        "collateral": _pick(funds, "collateralVal", "t1GrossCollatrl",
+                             "dirctColatrl", "adhocMargn"),
+        "m2munrealized": _pick(funds, "unrealMTM", "cncUnRealMTM", "unbookPNL"),
+        "m2mrealized": _pick(funds, "realizedPNL", "realMTM", "cncRealMTM"),
+        "utilizeddebits": _pick(funds, "margnUsed", "spanMargn", "expMargn"),
     }
+
+
+def _pick(d: dict, *keys) -> str:
+    """First present-and-numeric key wins; else "0.00"."""
+    for k in keys:
+        if k in d and d[k] is not None:
+            return _f(d[k])
+    return "0.00"
 
 
 def _f(v) -> str:
