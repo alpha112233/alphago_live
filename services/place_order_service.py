@@ -128,6 +128,44 @@ def validate_order_data(data: dict[str, Any]) -> tuple[bool, dict[str, Any] | No
         return False, None, str(err)
 
 
+def _round_price_to_tick(order_data: dict[str, Any]) -> None:
+    """Round LIMIT/SL price + trigger_price IN PLACE to the instrument's tick
+    size (from the symbol master). No-op for MARKET orders, unknown symbols,
+    or non-positive prices. Never raises — a lookup failure leaves the price
+    untouched (same as before this guard existed)."""
+    try:
+        pricetype = str(order_data.get("pricetype", "")).upper()
+        if pricetype not in ("LIMIT", "SL", "SL-M", "STOPLIMIT"):
+            return
+        from database.symbol import SymToken
+
+        row = SymToken.query.filter_by(
+            symbol=order_data.get("symbol"), exchange=order_data.get("exchange")
+        ).first()
+        tick = float(row.tick_size) if row and row.tick_size else 0.0
+        if tick <= 0:
+            return
+        for field in ("price", "trigger_price"):
+            raw = order_data.get(field)
+            if raw in (None, "", "0", 0):
+                continue
+            try:
+                fv = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if fv <= 0:
+                continue
+            snapped = round(round(fv / tick) * tick, 2)
+            if snapped != fv:
+                logger.info(
+                    "tick-round %s %s: %s -> %s (tick %s)",
+                    order_data.get("symbol"), field, fv, snapped, tick,
+                )
+            order_data[field] = snapped
+    except Exception:
+        logger.exception("tick-rounding skipped (leaving price untouched)")
+
+
 def place_order_with_auth(
     order_data: dict[str, Any],
     auth_token: str,
@@ -209,6 +247,14 @@ def place_order_with_auth(
             error_message="Broker-specific module not found",
         ))
         return False, error_response, 404
+
+    # Round LIMIT/SL prices to the instrument's tick BEFORE dispatch. Off-tick
+    # prices are hard-rejected by exchanges/brokers (IIFL XTS: "Price should be
+    # multiple of Tick Size ..."). Tick is per-instrument (0.01/0.05/0.1/0.2/
+    # 0.5/1/5), not a price band, so we read it from the symbol master. This is
+    # the single chokepoint every order source funnels through, so fixing it
+    # here covers advisor dispatch, exit covers, manual, and every broker.
+    _round_price_to_tick(order_data)
 
     try:
         res, response_data, order_id = broker_module.place_order_api(order_data, auth_token)

@@ -982,6 +982,15 @@ def run_auto_login_for_broker(user_id: int, username: str, broker: str) -> dict:
         "pin": pin_field,
         "password": password_field,
         "totp_secret": db_creds["totp_seed"],
+        # Market-data (feed) app creds — REQUIRED for the IIFL XTS adapter to
+        # mint the feed token. Without these the adapter silently skips the feed
+        # login, so quotes/market-data (and the orderbook/positions UI that
+        # enriches with LTP) break with "Invalid Token" even though trading
+        # works (2026-07-10 incident: rohit's UI showed empty order/trade/
+        # position pages). broker_credentials.py stores them; they just weren't
+        # being forwarded to the adapter here.
+        "api_key_market": db_creds.get("api_key_market") or "",
+        "api_secret_market": db_creds.get("api_secret_market") or "",
     }
 
     result = adapter(adapter_creds)
