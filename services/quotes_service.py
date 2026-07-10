@@ -373,6 +373,36 @@ def get_multiquotes_with_auth(
         return False, {"status": "error", "message": str(e)}, 500
 
 
+def _enrich_missing_ltp(result: tuple) -> tuple:
+    """DISPLAY-only resilience: for any symbol whose broker quote lacks a usable
+    LTP (e.g. the broker's market-data/feed token is down — the 2026-07-10
+    rohit case), fill it from the central AlphaQuark feed (equity + F&O, via
+    get_fallback_quote), flagged source='fallback' so the UI can mark it as a
+    delayed/central price. multiquotes drives the positions/orderbook LTP
+    display; order pricing uses the single get_quotes path, which stays strict
+    (broker-only). Never raises."""
+    try:
+        ok, body, code = result
+        if not ok or not isinstance(body, dict):
+            return result
+        from services.market_data_fallback import get_fallback_quote
+        for row in body.get("results", []):
+            data = row.get("data") or {}
+            try:
+                if float(data.get("ltp") or 0) > 0:
+                    continue
+            except (TypeError, ValueError):
+                pass
+            fb = get_fallback_quote(row.get("symbol"), row.get("exchange"))
+            if fb and float(fb.get("ltp") or 0) > 0:
+                fb = {**fb, "source": "fallback"}
+                row["data"] = fb
+                row.pop("error", None)
+    except Exception:
+        logger.debug("multiquotes LTP enrichment skipped", exc_info=True)
+    return result
+
+
 def get_multiquotes(
     symbols: list,
     api_key: str | None = None,
@@ -404,11 +434,11 @@ def get_multiquotes(
         )
         if AUTH_TOKEN is None:
             return False, {"status": "error", "message": "Invalid openalgo apikey"}, 403
-        return get_multiquotes_with_auth(AUTH_TOKEN, FEED_TOKEN, broker_name, symbols)
+        return _enrich_missing_ltp(get_multiquotes_with_auth(AUTH_TOKEN, FEED_TOKEN, broker_name, symbols))
 
     # Case 2: Direct internal call with auth_token and broker
     elif auth_token and broker:
-        return get_multiquotes_with_auth(auth_token, feed_token, broker, symbols)
+        return _enrich_missing_ltp(get_multiquotes_with_auth(auth_token, feed_token, broker, symbols))
 
     # Case 3: Invalid parameters
     else:

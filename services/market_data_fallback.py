@@ -80,13 +80,25 @@ def get_fallback_quote(symbol: str, exchange: str) -> dict | None:
     return None
 
 
-# ---- equity (Yahoo) --------------------------------------------------------
+# ---- equity (AlphaQuark central feed, Yahoo backstop) ----------------------
 
 def _equity_quote(symbol: str, exchange: str) -> dict | None:
-    ysym = f"{symbol.upper().strip()}{_YAHOO_SUFFIX[exchange]}"
-    q = _yahoo_quote(ysym)
+    """Live equity LTP. PREFERS the central AlphaQuark feed (real-time,
+    self-hosted, the same feed used for F&O — one source we control instead of
+    an external dependency). The feed resolves the plain symbol via its own
+    scripmaster (base-Name match for the cash series — see websocket
+    get_token_id_from_symbol), so send the CLEAN symbol, NOT a hard-coded `-EQ`
+    (BE/BZ/SM series exist). Falls back to Yahoo (~15-min delayed) only if the
+    central feed is unavailable (no SERVICE_TOKEN, feed down, or symbol
+    unresolved) — 2026-07-10."""
+    sym = symbol.upper().strip()
+    px = _publisher_ltp(sym, exchange)
+    if px:
+        logger.info(f"fallback quote {symbol} {exchange}: ltp={px} (AlphaQuark central)")
+        return _quote_dict(px)
+    q = _yahoo_quote(f"{sym}{_YAHOO_SUFFIX[exchange]}")
     if q:
-        logger.info(f"sandbox fallback quote {symbol} {exchange}: ltp={q['ltp']} (Yahoo)")
+        logger.info(f"fallback quote {symbol} {exchange}: ltp={q['ltp']} (Yahoo backstop)")
     return q
 
 
