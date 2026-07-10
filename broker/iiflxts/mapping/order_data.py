@@ -228,9 +228,15 @@ def transform_tradebook_data(tradebook_data):
         exchange = trade.get("ExchangeSegment", "")
         mapped_exchange = exchange_mapping.get(exchange, exchange)
 
-        # Ensure quantity and average price are converted to the correct types
-        quantity = int(trade.get("OrderQuantity", 0))
-        average_price = float(trade.get("OrderAverageTradedPrice", 0.0))
+        # A tradebook row is a single FILL, so use this fill's quantity + price
+        # (LastTradedQuantity / LastTradedPrice), NOT the order-level totals.
+        # OrderQuantity is the whole order size (identical on every partial-fill
+        # row) and OrderAverageTradedPrice is the running average — using them
+        # showed a 111-share order that filled in 11 pieces as 11 rows of qty
+        # 111 (2026-07-10). Fall back to the order-level fields only if the
+        # per-trade fields are absent.
+        quantity = int(trade.get("LastTradedQuantity") or trade.get("OrderQuantity", 0) or 0)
+        average_price = float(trade.get("LastTradedPrice") or trade.get("OrderAverageTradedPrice", 0.0) or 0.0)
 
         transformed_trade = {
             "symbol": trade.get("TradingSymbol", ""),

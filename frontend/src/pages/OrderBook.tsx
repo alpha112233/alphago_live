@@ -203,6 +203,8 @@ export default function OrderBook() {
   const fetchOrders = useCallback(
     async (showRefresh = false) => {
       if (!apiKey) {
+        // No key rather than a fetch failure — say so instead of blanking.
+        setError('No API key found for this account. Generate one on the API Key page to view your orders.')
         setIsLoading(false)
         return
       }

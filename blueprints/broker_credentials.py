@@ -1031,6 +1031,21 @@ def run_auto_login_for_broker(user_id: int, username: str, broker: str) -> dict:
     except Exception:
         logger.exception("os.environ sync skipped (non-fatal)")
 
+    # Ensure the user has an OpenAlgo API key. Webhook-only customers (who
+    # trade via the publisher distribution inbox and never open the "API Key"
+    # page) otherwise have NO key — which silently blanks the orderbook /
+    # positions / tradebook SPA pages even though trading works fine
+    # (2026-07-10: rohit held a 111-share position his UI couldn't show).
+    # Auto-provision one on successful login so the customer UI always works.
+    try:
+        from database.auth_db import get_api_key_for_tradingview, upsert_api_key
+        if not get_api_key_for_tradingview(username):
+            import secrets as _secrets
+            upsert_api_key(username, _secrets.token_hex(32))
+            logger.info(f"auto-provisioned OpenAlgo API key for {username} (had none)")
+    except Exception:
+        logger.exception("API key auto-provision skipped (non-fatal)")
+
     mark_auth_success(user_id, broker)
     return {
         "ok": True,
