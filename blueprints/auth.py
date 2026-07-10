@@ -905,10 +905,26 @@ def get_dashboard_data():
         margin_data = response.get("data", {})
 
         if not margin_data:
-            logger.error(f"Failed to get margin data for user {login_username}")
-            return jsonify({"status": "error", "message": "Failed to get margin data"}), 500
+            # GRACEFUL DEGRADE: a transient margin/funds failure (e.g. a
+            # momentarily degraded broker session) must NOT 500 the whole
+            # dashboard — that blanks the React SPA, so the orderbook /
+            # tradebook / positions panels (which come from the INTERACTIVE
+            # token and are fine) also render empty. Return 200 with an empty
+            # margin payload + a flag so the funds panel shows "unavailable"
+            # while the rest of the dashboard still loads. (2026-07-10.)
+            logger.warning(
+                f"margin data empty for user {login_username} — returning "
+                f"degraded dashboard (funds unavailable, other panels unaffected)"
+            )
+            return jsonify({
+                "status": "success",
+                "data": {},
+                "margin_available": False,
+                "message": "Funds/margin temporarily unavailable — reconnect the "
+                           "broker if this persists.",
+            })
 
-        return jsonify({"status": "success", "data": margin_data})
+        return jsonify({"status": "success", "data": margin_data, "margin_available": True})
 
     except Exception as e:
         logger.exception(f"Error fetching dashboard data: {e}")
