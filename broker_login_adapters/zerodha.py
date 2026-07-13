@@ -160,23 +160,58 @@ def login(creds: dict) -> dict:
         msg = body2.get("message") or body2.get("error_type") or str(body2)[:200]
         return _fail(f"step2 /api/twofa rejected (wrong TOTP seed?): {msg}")
 
-    # Step 3: GET /connect/login?api_key=... follows redirects through the
-    # Kite OAuth dance and ends at our app's redirect_uri with a
-    # request_token query param. curl_cffi follows redirects automatically.
+    # Step 3: GET /connect/login?api_key=... enters Kite's OAuth 302 chain,
+    # which terminates at OUR app's redirect_uri with a request_token= query
+    # param (chain: /connect/login -> /connect/finish -> <redirect_uri>?request_token=).
+    #
+    # We MUST NOT let curl_cffi auto-follow the whole chain. This adapter's
+    # session carries no Flask login cookie, so following the final 302 into
+    # our own /<broker>/callback makes the app answer "user not in session,
+    # redirecting to login" and curl_cffi keeps following into the authenticated
+    # UI, where a hop stalls for the full timeout — surfacing as
+    # `curl (28) Operation timed out ... 0 bytes received` and the request_token
+    # is never read (root cause of anantswain's never-succeeding Zerodha
+    # auto-login, 2026-07-13). Instead we follow the chain by hand and STOP the
+    # instant a hop redirects to our redirect_uri, harvesting request_token
+    # straight off the Location header. Bonus: request_token is single-use, so
+    # not GETting our own callback keeps it unconsumed for step 4's exchange.
+    request_token = None
+    status = None
+    final_url = _KITE_CONNECT_LOGIN_URL
+    hop_url = f"{_KITE_CONNECT_LOGIN_URL}?api_key={api_key}&v=3"
     try:
-        r3 = sess.get(
-            _KITE_CONNECT_LOGIN_URL,
-            params={"api_key": api_key, "v": "3"},
-            allow_redirects=True,
-            timeout=15,
-        )
+        for _ in range(10):
+            r3 = sess.get(hop_url, allow_redirects=False, timeout=15)
+            loc = r3.headers.get("location") or r3.headers.get("Location")
+            # request_token / status=error can show up on the URL we just
+            # fetched OR on the Location we're about to follow — check both,
+            # preferring the Location so we stop BEFORE touching our callback.
+            for candidate in (loc, hop_url):
+                if not candidate:
+                    continue
+                cq = parse_qs(urlparse(candidate).query)
+                if cq.get("request_token", [None])[0]:
+                    request_token = cq["request_token"][0]
+                    status = cq.get("status", [None])[0]
+                    final_url = candidate
+                    break
+                if cq.get("status", [None])[0] == "error":
+                    status = "error"
+                    final_url = candidate
+                    break
+            if request_token or status == "error":
+                break
+            if not loc:
+                final_url = hop_url
+                break
+            if loc.startswith("/"):
+                p = urlparse(hop_url)
+                loc = f"{p.scheme}://{p.netloc}{loc}"
+            hop_url = loc
     except Exception as e:
         return _fail(f"step3 /connect/login redirect chain: {e}")
 
-    final_url = str(r3.url)
     qs = parse_qs(urlparse(final_url).query)
-    request_token = qs.get("request_token", [None])[0]
-    status = qs.get("status", [None])[0]
 
     if not request_token:
         # Surface what Kite returned so the customer can act on it.
