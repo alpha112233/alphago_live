@@ -67,7 +67,17 @@ def login(creds: dict) -> dict:
     api_key = (creds.get("api_key") or os.getenv("BROKER_API_KEY") or "").strip()
     user_id = (creds.get("user_id") or creds.get("client_code")
                or os.getenv("BROKER_CLIENT_ID") or "").strip()
-    password = (creds.get("password") or os.getenv("BROKER_API_KEY_MARKET") or "").strip()
+    # Trading password for arihant is stored in broker_creds.api_key_market_enc
+    # (see this module's docstring). run_auto_login_for_broker forwards that DB
+    # value under the `api_key_market` key — so read it here. Prefer the DB
+    # value (creds) over the env var: the env BROKER_API_KEY_MARKET is only set
+    # for the *active* broker and can go stale (adityaneo had an 18-char env
+    # value ≠ the 12-char stored trading password → Arihant "wrong password";
+    # rukmanivenkatraman had no env value at all → "trading password not set" —
+    # both boxes' auto-login broke at the 2026-07-08 refresh-token death because
+    # this fallback never consulted api_key_market). 2026-07-13.
+    password = (creds.get("password") or creds.get("api_key_market")
+                or os.getenv("BROKER_API_KEY_MARKET") or "").strip()
     totp_secret = (creds.get("totp_secret") or creds.get("totp_seed") or "").strip()
 
     if not api_key:
@@ -125,23 +135,31 @@ def login(creds: dict) -> dict:
     data2 = (resp2 or {}).get("data") or {}
     access_token = data2.get("accessToken")
     refresh_token = data2.get("refreshToken")
-    if not access_token or not refresh_token:
+    if not access_token:
         info_id = (resp2 or {}).get("infoID") or ""
         info_msg = (resp2 or {}).get("infoMsg") or ""
         return _fail(
-            f"Arihant verify_otp did not return both tokens. "
+            f"Arihant verify_otp did not return an accessToken. "
             f"infoID={info_id!r} infoMsg={info_msg!r}. "
             f"Common causes: TOTP code drift (clock skew), TOTP seed mismatch, OTP type mismatch (Arihant still on SMS)."
         )
 
-    # Persist {user_id}:::{refresh_token} back to broker_creds_db so
-    # subsequent calls hit the refresh-token chain (cheaper) until this
-    # next rotates again ~6 months out.
-    try:
-        _persist_refresh_token(user_id, refresh_token, api_key)
-    except Exception as e:
-        # Soft-fail — caller still gets the access_token for immediate use.
-        logger.warning(f"Arihant adapter: refresh_token persistence failed (non-fatal): {e}")
+    # refresh_token is OPTIONAL. Arihant's verify_otp now returns only
+    # accessToken+tokenExpiry for some accounts (verified 2026-07-13 on
+    # rukmanivenkatraman + adityaneo: data carried accessToken, no
+    # refreshToken). The daily 08:00 scheduler re-mints the accessToken
+    # hands-free via THIS TOTP adapter anyway, so a missing refresh_token only
+    # forfeits the cheap refresh-chain optimization — it must NOT fail the
+    # login (that was the second bug that kept both boxes down after the
+    # 2026-07-08 refresh-token death). Persist {user_id}:::{refresh_token}
+    # only when Arihant actually returns one, so we never clobber the stored
+    # value with an empty string.
+    if refresh_token:
+        try:
+            _persist_refresh_token(user_id, refresh_token, api_key)
+        except Exception as e:
+            # Soft-fail — caller still gets the access_token for immediate use.
+            logger.warning(f"Arihant adapter: refresh_token persistence failed (non-fatal): {e}")
 
     expires_at = data2.get("tokenExpiry")
     if not expires_at:
