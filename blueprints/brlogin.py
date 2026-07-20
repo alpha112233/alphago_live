@@ -558,7 +558,18 @@ def broker_callback(broker, para=None):
                 data = (resp or {}).get("data") or {}
                 access_token = data.get("accessToken")
                 refresh_token = data.get("refreshToken")
-                if not access_token or not refresh_token:
+                # 🔴 2026-07-20: refresh_token is OPTIONAL — require only the
+                # accessToken. Arihant's verify_otp returns just
+                # accessToken+tokenExpiry for these accounts (no refreshToken);
+                # demanding both made a SUCCESSFUL login render as
+                # "OTP verification failed" while the log showed
+                # infoMsg='success' plus a valid token. The customer sees the
+                # error, reconnects, succeeds again, and still gets no session
+                # — reported as "connects but balance shows 0".
+                # This is the SAME defect fixed in broker_login_adapters/
+                # arihant.py on 2026-07-13 (auto-login path); the interactive
+                # Connect path was missed then. Keep the two in agreement.
+                if not access_token:
                     msg = (resp or {}).get("infoMsg") or "OTP verification failed"
                     logger.error(f"Arihant verify_otp failed: {resp!r}")
                     return _arihant_page("Step 2 of 2",
@@ -569,13 +580,17 @@ def broker_callback(broker, para=None):
                 # Persist the refresh token into broker_creds_db so daily
                 # auto-login can use it. Also re-export to env so the rest
                 # of this request sees the new secret.
+                # Only when Arihant ACTUALLY returned one — writing
+                # "{user}:::None" would clobber a still-valid stored refresh
+                # token with a dead string and break the cheap daily refresh
+                # chain (mirrors broker_login_adapters/arihant.py:157).
                 try:
                     from database.broker_creds_db import (
                         add_or_update_broker_creds, get_broker_creds,
                     )
                     from database.user_db import User, db_session
                     admin = db_session.query(User).filter_by(is_admin=True).first()
-                    if admin is not None:
+                    if admin is not None and refresh_token:
                         existing = get_broker_creds(admin.id, "arihant") or {}
                         add_or_update_broker_creds(
                             user_id=admin.id, broker="arihant",
@@ -596,8 +611,17 @@ def broker_callback(broker, para=None):
                             )
                         except Exception:
                             pass
-                    else:
+                    elif admin is None:
                         logger.warning("Arihant: no admin user yet — refresh_token NOT persisted")
+                    else:
+                        # accessToken-only login: expected for these accounts.
+                        # The daily 08:00 TOTP adapter re-mints hands-free, so
+                        # this only forfeits the refresh-chain optimisation.
+                        logger.info(
+                            f"Arihant: verify_otp returned no refreshToken for "
+                            f"user_id={arihant_user} — access token accepted, stored "
+                            f"refresh token left intact (daily TOTP auto-login covers this)"
+                        )
                 except Exception as e:
                     logger.exception("Arihant: failed to persist refresh_token")
                     return _arihant_page("Error",

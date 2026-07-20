@@ -70,7 +70,36 @@ def _pick(d: dict, *keys) -> str:
 
 
 def _f(v) -> str:
+    """Coerce an Arihant money field to a plain 2dp string.
+
+    🔴 2026-07-20 BUG FIX. Arihant returns money as INDIAN-COMMA-GROUPED
+    STRINGS — `netCashAvail: '2,13,821.29'`. A bare `float()` raises
+    ValueError on the commas, and the except-branch turned that into
+    `"0.00"` — a *plausible business value*, so the dashboard showed a
+    confident zero balance rather than an error. Reported as a connection
+    problem ("connects fine, balance still 0") because nothing looked broken.
+
+    The bug was INVISIBLE below ₹1,000 (no comma is emitted) and silent above
+    it. adityaneo was verified on 2026-07-08 while genuinely flat at '0.00',
+    which parsed fine and masked this entirely; it only surfaced once the
+    account was funded to ₹2,13,821.29. Affects EVERY Arihant customer with
+    any field >= 1,000 — cash, collateral, margin used, MTM alike.
+
+    Strip separators before parsing. Keep returning "0.00" on genuinely
+    unparseable input, but LOG it: silently coercing a parse failure into a
+    real-looking number is what hid this for 12 days.
+    """
+    if v is None:
+        return "0.00"
+    raw = v
+    if isinstance(v, str):
+        # Indian grouping ('2,13,821.29'), stray spaces/NBSP, optional ₹.
+        v = v.replace(",", "").replace(" ", "").replace(" ", "").strip()
+        v = v.lstrip("₹").strip()
+        if v in ("", "-", "--"):
+            return "0.00"
     try:
         return f"{float(v or 0):.2f}"
     except (TypeError, ValueError):
+        log.warning(f"Arihant funds: unparseable money value {raw!r} — using 0.00")
         return "0.00"
