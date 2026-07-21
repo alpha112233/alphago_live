@@ -126,7 +126,9 @@ def map_trade_data(trade_data: list[dict]) -> list[dict]:
 
 
 def transform_tradebook_data(trade_data: list[dict]) -> list[dict]:
-    return map_trade_data(trade_data)
+    # Pass-through — same double-map hazard as positions/orders above
+    # (tradebook_service maps first, then calls this on the result).
+    return trade_data or []
 
 
 def map_position_data(position_data: list[dict]) -> list[dict]:
@@ -163,7 +165,17 @@ def map_position_data(position_data: list[dict]) -> list[dict]:
 
 
 def transform_positions_data(position_data: list[dict]) -> list[dict]:
-    return map_position_data(position_data)
+    """Called on the ALREADY-MAPPED rows — positionbook_service runs
+    map_position_data() first, then transform_positions_data() on its output.
+    Return as-is. 🔴 2026-07-21: this used to `return map_position_data(...)`,
+    double-mapping the canonical rows: the second pass sees `symbol` as a plain
+    string (not the raw nested dict) and qty under `quantity` (not `netQty`),
+    so it blanked EVERY row to symbol='' quantity=0 while ltp (same key)
+    survived — the exact `{symbol:'', quantity:0, ltp:X}` the publisher saw,
+    which made its reconcile read "0 broker positions" and mark-flat real book
+    rows. Identical to the 2026-07-01 empty-orderbook bug already fixed in
+    transform_order_data above."""
+    return position_data or []
 
 
 def map_portfolio_data(holdings: list[dict]) -> list[dict]:
