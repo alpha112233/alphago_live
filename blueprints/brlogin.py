@@ -1196,8 +1196,28 @@ def broker_callback(broker, para=None):
         session["broker"] = broker
         logger.info(f"Successfully connected broker: {broker}")
         if broker == "zerodha":
-            # Read per-request — see fork note at top of file.
-            auth_token = f"{os.getenv('BROKER_API_KEY')}:{auth_token}"
+            # Kite needs the stored token as `api_key:access_token`. Prefer the
+            # per-request env (set by the login flow), but FALL BACK to the
+            # stored broker_creds api_key if the env is empty — os.getenv can be
+            # blank (fresh worker / bootstrap race), and a blank prefix stores a
+            # `:access_token` that fails every call with "authorization value
+            # should atleast be api_key:access_token" (2026-07-21; the daemon
+            # path had the same class of bug — broker_credentials.py). Never let
+            # this write a malformed token again.
+            _ak = (os.getenv("BROKER_API_KEY") or "").strip()
+            if not _ak:
+                try:
+                    from database.user_db import User, db_session as _udb
+                    from database.broker_creds_db import get_broker_creds
+                    _admin = _udb.query(User).filter_by(is_admin=True).first()
+                    if _admin:
+                        _ak = ((get_broker_creds(_admin.id, "zerodha") or {}).get("api_key") or "").strip()
+                except Exception:
+                    logger.exception("zerodha login: broker_creds api_key fallback failed")
+            if not _ak:
+                logger.error("zerodha login: no api_key available (env + creds both empty) "
+                             "— stored token would be malformed; refusing to prefix blank")
+            auth_token = f"{_ak}:{auth_token}" if _ak else auth_token
         if broker == "dhan":
             auth_token = f"{auth_token}"
 
