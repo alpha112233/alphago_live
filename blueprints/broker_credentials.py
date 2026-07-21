@@ -1004,11 +1004,34 @@ def run_auto_login_for_broker(user_id: int, username: str, broker: str) -> dict:
 
     # Persist the access_token via OpenAlgo's normal auth path so subsequent
     # broker API calls (orders, holdings, etc.) find it.
+    #
+    # 🔴 2026-07-21 BUG FIX. Kite Connect requires the stored auth token to be
+    # `api_key:access_token` (the Authorization header is `token
+    # api_key:access_token`). The MANUAL browser login assembles that prefix
+    # (brlogin.py:1200), but THIS daemon/scheduler path stored the RAW
+    # access_token — so every day the 08:00 auto-login re-minted, it wrote a
+    # MALFORMED token and every Zerodha call (funds/positions/orders) failed
+    # with "authorization value should atleast be `api_key`:`access_token`"
+    # → the customer saw all values as NaN and orders ENTRY-failed, until a
+    # manual browser re-login overwrote it with the correct format (anantswain,
+    # 2026-07-21). Mirror the browser path here. Use db_creds['api_key'] (the
+    # stored key, in scope from line ~970) — NOT os.getenv('BROKER_API_KEY'),
+    # which is EMPTY in the scheduler process (that env is only populated on an
+    # interactive login/bootstrap, which is also why the manual path happened
+    # to work while this one did not).
+    persist_token = result["access_token"]
+    if broker == "zerodha" and persist_token and ":" not in persist_token:
+        _ak = (db_creds.get("api_key") or "").strip()
+        if _ak:
+            persist_token = f"{_ak}:{persist_token}"
+        else:
+            logger.error("zerodha auto-login: api_key missing from creds — stored "
+                         "token will be malformed (orders will fail). Check broker_creds.")
     try:
         from database.auth_db import upsert_auth
         upsert_auth(
             name=username,
-            auth_token=result["access_token"],
+            auth_token=persist_token,
             broker=broker,
             feed_token=result.get("feed_token"),
             user_id=result.get("user_id"),
