@@ -140,15 +140,24 @@ def map_position_data(position_data: list[dict]) -> list[dict]:
         sym = p.get("symbol") or {}
         if not isinstance(sym, dict):
             sym = {}
+        # 🔴 2026-07-21: pnl/day_pnl read keys Arihant does NOT send
+        # (`pnl`/`realizedPnl`/`dayPnl`) → both came back null on every row.
+        # The real position-book keys (verified live on adityaneo's account):
+        #   netPnl        = total P&L (booked + unrealised)  ← the position P&L
+        #   unRealizedPnl = open-leg MTM
+        #   bookedPnl     = realised on the squared-off leg (may be a string)
+        # symbol (nested dict → tradingSymbol) and quantity (netQty) were
+        # already correct — a squared intraday position correctly reports
+        # netQty=0, i.e. it is CLOSED even if a broker UI still lists it.
         out.append({
             "symbol": _oa_symbol(sym.get("tradingSymbol") or sym.get("symbol"), sym.get("exc")),
             "exchange": (sym.get("exc") or "").upper(),
             "product": reverse_map_product_type(p.get("prdType")),
             "quantity": p.get("netQty") or p.get("net_qty") or 0,
-            "average_price": p.get("avgBuyPrice") or p.get("avgPrice"),
+            "average_price": p.get("avgPrice") or p.get("currAvgPrice") or p.get("buyAvgPrice"),
             "ltp": p.get("ltp"),
-            "pnl": p.get("pnl") or p.get("realizedPnl"),
-            "day_pnl": p.get("dayPnl"),
+            "pnl": _num(p.get("netPnl")) if p.get("netPnl") is not None else _num(p.get("unRealizedPnl")),
+            "day_pnl": _num(p.get("bookedPnl")) if p.get("bookedPnl") is not None else _num(p.get("netPnl")),
         })
     return out
 
