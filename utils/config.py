@@ -67,3 +67,15 @@ def get_brand_name() -> str:
 def get_brand_tagline() -> str:
     """Tagline shown under the brand name. Defaults to 'Your own trading platform'."""
     return os.getenv("BRAND_TAGLINE", "A terminal for serious traders")
+
+
+# alphago_live fork additions — hosting-agreement consent gate (Phase 3b).
+# Injected at provision time by hostingsol; unset => gate disabled (fail-open).
+def get_consent_status_url() -> str:
+    """hostingsol endpoint the container calls to check its OWN signed status."""
+    return os.getenv("AQ_CONSENT_STATUS_URL", "").strip()
+
+
+def get_consent_status_token() -> str:
+    """Read-only, subdomain-scoped bearer for the consent status check."""
+    return os.getenv("AQ_CONSENT_STATUS_TOKEN", "").strip()

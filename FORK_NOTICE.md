@@ -57,3 +57,18 @@ per user. We keep the diff small to make periodic rebasing from upstream straigh
 ## Maintainer
 
 AlphaQuark (`pratik@alphaquark.in`)
+
+## Consent gate (Phase 3b) — hosting-agreement enforcement
+
+Fork-only addition. Before placing a LIVE order, the container checks whether its
+AlphaQuark hosting agreement is signed (`utils/consent.py::is_consent_blocked`),
+using a read-only, subdomain-scoped token from hostingsol (env
+`AQ_CONSENT_STATUS_URL` + `AQ_CONSENT_STATUS_TOKEN`, injected at provision time).
+
+- Enforced at the two live-entry service funnels: `services/place_order_service.py`
+  (`place_order_with_auth`) and `services/place_smart_order_service.py`
+  (`place_smart_order_with_auth`), right after the analyze-mode branch.
+- **Exits are never gated** (close-position is not blocked).
+- **Fail-open:** blocks ONLY on a definitive `{"signed": false}`; any error /
+  timeout / non-200 / unconfigured → allow. A hostingsol outage never freezes trading.
+- Config getters: `utils/config.py::get_consent_status_url/token`. Env in `.sample.env`.

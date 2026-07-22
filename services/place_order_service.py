@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from database.auth_db import get_auth_token_broker
 from database.settings_db import get_analyze_mode
+from utils.consent import CONSENT_BLOCK_MESSAGE, is_consent_blocked
 from events import AnalyzerErrorEvent, OrderFailedEvent, OrderPlacedEvent
 from restx_api.schemas import OrderSchema
 from utils.constants import (
@@ -231,6 +232,11 @@ def place_order_with_auth(
             ))
 
         return success, response, status_code
+
+    # Consent gate (fork addition): block LIVE entries until the hosting
+    # agreement is signed. Fail-open — never blocks on error/timeout/unconfigured.
+    if is_consent_blocked():
+        return False, {"status": "error", "message": CONSENT_BLOCK_MESSAGE}, 403
 
     # If not in analyze mode, proceed with actual order placement
     broker_module = import_broker_module(broker)
